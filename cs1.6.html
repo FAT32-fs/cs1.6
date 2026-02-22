@@ -17,36 +17,22 @@
 <body>
 <canvas id="canvas"></canvas>
 <script type="module">
-    import JSZip from 'https://cdn.skypack.dev/jszip@3.10.1';
-
     async function main() {
         const files = {};
 
-        // Fetch ZIP with CORS enabled
+        // Fetch ZIP directly as binary
         const res = await fetch('https://cdn.jsdelivr.net/gh/FAT32-fs/cs1.6@main/valve.zip', {
             mode: 'cors',
             cache: 'no-store'
         });
         if (!res.ok) throw new Error("Failed to fetch valve.zip");
 
-        const buf = await res.arrayBuffer();
-        console.log("ZIP downloaded, size:", buf.byteLength);
+        const buf = new Uint8Array(await res.arrayBuffer());
+        console.log("ZIP loaded, size:", buf.byteLength);
 
-        // Extract ZIP using JSZip
-        const zip = await JSZip.loadAsync(buf);
+        // Mount ZIP directly — Xash3D can read it internally
+        files["/rodir/cstrike.zip"] = buf;
 
-        for (const path in zip.files) {
-            const file = zip.files[path];
-            if (file.dir) continue; // skip directories
-
-            // Mount all files into /rodir/cstrike
-            const targetPath = `/rodir/cstrike/${path}`;
-            const data = await file.async("uint8array");
-            files[targetPath] = data;
-        }
-        console.log("ZIP extracted, total files:", Object.keys(files).length);
-
-        // Initialize Xash3D
         Xash3D({
             arguments: ['-windowed', '-game', 'cstrike', '+_vgui_menus', '0'],
             canvas: document.getElementById('canvas'),
@@ -65,14 +51,12 @@
                 "/rwdir/filesystem_stdio.so",
             ],
             onRuntimeInitialized: function () {
-                // Write all extracted files into FS
-                for (const path in files) {
-                    const dir = path.split('/').slice(0, -1).join('/');
-                    this.FS.mkdirTree(dir);
-                    this.FS.writeFile(path, files[path]);
-                }
+                // Write the ZIP file into the virtual filesystem
+                const dir = '/rodir';
+                this.FS.mkdirTree(dir);
+                this.FS.writeFile('/rodir/cstrike.zip', files["/rodir/cstrike.zip"]);
                 this.FS.chdir('/rodir');
-                console.log("CS 1.6 files mounted. Ready to play!");
+                console.log("CS 1.6 ZIP mounted. Ready to play!");
             },
             locateFile: (p) => {
                 switch (p) {
