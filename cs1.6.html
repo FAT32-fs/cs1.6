@@ -36,6 +36,10 @@
 
     const status = document.getElementById('status');
 
+    const clientUrl = 'https://cdn.jsdelivr.net/npm/cs16-client@latest/cl_dll/client_emscripten_wasm32.wasm';
+    const menuUrl   = 'https://cdn.jsdelivr.net/npm/cs16-client@latest/cl_dll/menu_emscripten_wasm32.wasm';
+    const serverUrl = 'https://cdn.jsdelivr.net/npm/cs16-client@latest/dlls/cs_emscripten_wasm32.so';
+
     async function main() {
         const chunkUrls = [
             './valve.zip.part1',
@@ -82,7 +86,12 @@
 
         const x = new Xash3D({
             canvas: document.getElementById('canvas'),
-            arguments: ['-windowed', '-game', 'cstrike', '+_vgui_menus', '0'],
+            args: ['-windowed', '-game', 'cstrike', '+_vgui_menus', '0'],
+            libraries: {
+                menu: menuUrl,
+                client: clientUrl,
+                server: serverUrl,
+            },
         });
 
         await x.init();
@@ -94,7 +103,6 @@
         });
 
         x.FS.chdir('/rodir');
-
         status.style.display = 'none';
         x.main();
     }
