@@ -73,16 +73,15 @@
         });
 
         Xash3D({
-            arguments: ['-windowed', '-game', 'cstrike', '+_vgui_menus', '0', '-ref', 'gl'],
-            canvas,
-            ctx,
-            dynamicLibraries: [
-                'filesystem_stdio.wasm',
-                'cl_dlls/menu_emscripten_wasm32.wasm',
-                'dlls/cs_emscripten_wasm32.wasm',
-                'cl_dlls/client_emscripten_wasm32.wasm',
-                '/rwdir/filesystem_stdio.so',
-            ],
+    arguments: ['-windowed', '-game', 'cstrike', '+_vgui_menus', '0', '-ref', 'soft'],
+    canvas,
+    dynamicLibraries: [
+        'filesystem_stdio.wasm',
+        'cl_dlls/menu_emscripten_wasm32.wasm',
+        'dlls/cs_emscripten_wasm32.wasm',
+        'cl_dlls/client_emscripten_wasm32.wasm',
+        '/rwdir/filesystem_stdio.so',
+    ],
             onRuntimeInitialized: function () {
                 Object.entries(files).forEach(([k, v]) => {
                     const dir = k.split('/').slice(0, -1).join('/');
@@ -121,4 +120,5 @@
 </script>
 </body>
 </html>
+
 
