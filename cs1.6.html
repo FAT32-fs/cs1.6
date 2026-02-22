@@ -21,14 +21,6 @@
     const CDN  = 'https://cdn.jsdelivr.net/npm/xash3d-fwgs@latest/dist/';
     const CS16 = 'https://cdn.jsdelivr.net/npm/cs16-client@latest/dist/cstrike/';
 
-    const libUrls = {
-        'filesystem_stdio.wasm':              CDN  + 'filesystem_stdio.wasm',
-        'libref_gles3compat.wasm':            CDN  + 'libref_gles3compat.wasm',
-        'cl_dlls/menu_emscripten_wasm32.wasm': CS16 + 'cl_dlls/menu_emscripten_wasm32.wasm',
-        'dlls/cs_emscripten_wasm32.wasm':      CS16 + 'dlls/cs_emscripten_wasm32.wasm',
-        'cl_dlls/client_emscripten_wasm32.wasm': CS16 + 'cl_dlls/client_emscripten_wasm32.wasm',
-    };
-
     async function main() {
         const chunkUrls = [
             './valve.zip.part1',
@@ -37,22 +29,6 @@
             './valve.zip.part4',
             './valve.zip.part5',
         ];
-
-        status.textContent = 'Downloading engine files...';
-        const [wasmBinary, ...libBuffers] = await Promise.all([
-            fetch(CDN + 'xash.wasm').then(r => r.arrayBuffer()),
-            ...Object.values(libUrls).map(url =>
-                fetch(url).then(r => {
-                    if (!r.ok) throw new Error('Failed: ' + url);
-                    return r.arrayBuffer();
-                })
-            )
-        ]);
-
-        const libs = {};
-        Object.keys(libUrls).forEach((name, i) => {
-            libs[name] = new Uint8Array(libBuffers[i]);
-        });
 
         status.textContent = 'Downloading game chunks...';
         const chunks = await Promise.all(
@@ -87,7 +63,10 @@
 
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('webgl2', {
-            alpha: false, depth: true, stencil: true, antialias: false,
+            alpha: false,
+            depth: true,
+            stencil: true,
+            antialias: false,
             powerPreference: 'high-performance',
             preserveDrawingBuffer: true,
             failIfMajorPerformanceCaveat: false
@@ -97,16 +76,15 @@
             arguments: ['-windowed', '-game', 'cstrike', '+_vgui_menus', '0', '-ref', 'gles3compat'],
             canvas,
             ctx,
-            wasmBinary,
-            dynamicLibraries: Object.keys(libUrls),
+            dynamicLibraries: [
+                'filesystem_stdio.wasm',
+                'libref_gles3compat.wasm',
+                'cl_dlls/menu_emscripten_wasm32.wasm',
+                'dlls/cs_emscripten_wasm32.wasm',
+                'cl_dlls/client_emscripten_wasm32.wasm',
+                '/rwdir/filesystem_stdio.so',
+            ],
             onRuntimeInitialized: function () {
-                // Write all lib files into the virtual FS
-                Object.entries(libs).forEach(([name, data]) => {
-                    const dir = name.includes('/') ? name.split('/').slice(0, -1).join('/') : '';
-                    if (dir) this.FS.mkdirTree('/rodir/' + dir);
-                    this.FS.writeFile('/rodir/' + name, data);
-                });
-                // Write game files
                 Object.entries(files).forEach(([k, v]) => {
                     const dir = k.split('/').slice(0, -1).join('/');
                     this.FS.mkdirTree(dir);
@@ -115,7 +93,25 @@
                 this.FS.chdir('/rodir');
                 status.style.display = 'none';
             },
-            locateFile: (p) => p,
+            locateFile: (p) => {
+                switch (p) {
+                    case 'xash.wasm':
+                        return CDN + 'xash.wasm';
+                    case 'filesystem_stdio.wasm':
+                    case '/rwdir/filesystem_stdio.so':
+                        return CDN + 'filesystem_stdio.wasm';
+                    case 'libref_gles3compat.wasm':
+                        return CDN + 'libref_gles3compat.wasm';
+                    case 'cl_dlls/menu_emscripten_wasm32.wasm':
+                        return CS16 + 'cl_dlls/menu_emscripten_wasm32.wasm';
+                    case 'dlls/cs_emscripten_wasm32.wasm':
+                        return CS16 + 'dlls/cs_emscripten_wasm32.wasm';
+                    case 'cl_dlls/client_emscripten_wasm32.wasm':
+                        return CS16 + 'cl_dlls/client_emscripten_wasm32.wasm';
+                    default:
+                        return p;
+                }
+            },
         });
     }
 
