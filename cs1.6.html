@@ -1,16 +1,19 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>CS 1.6 Web</title>
+    <title>Loading</title>
     <style>
         canvas {
             width: 100vw;
             height: 100vh;
-            position: fixed;
             top: 0;
             left: 0;
+            position: fixed;
         }
-        body { margin: 0; }
+
+        body {
+            margin: 0;
+        }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/xash3d-fwgs@latest/dist/raw.js"></script>
 </head>
@@ -20,43 +23,29 @@
     import JSZip from 'https://cdn.skypack.dev/jszip@3.10.1';
 
     async function main() {
-        const files = {};
+        const files = {}
+        const res = await fetch('./valve.zip')
+        const zip = await JSZip.loadAsync(await res.arrayBuffer());
 
-        // Fetch the ZIP
-        const res = await fetch('https://cdn.jsdelivr.net/gh/FAT32-fs/cs1.6@main/valve.zip', {
-            mode: 'cors',
-            cache: 'no-store'
-        });
-        if (!res.ok) throw new Error("Failed to fetch valve.zip");
+        await Promise.all(Object.keys(zip.files).map(async p => {
+            const file = zip.files[p]
+            if (file.dir) return;
 
-        const buf = await res.arrayBuffer();
-        console.log("ZIP downloaded, size:", buf.byteLength);
+            const path = `/rodir/${p}`;
 
-        // Load ZIP using JSZip
-        const zip = await JSZip.loadAsync(buf);
+            files[path] = await file.async("uint8array")
+        }))
 
-        // Extract all files into /rodir/cstrike
-        for (const path in zip.files) {
-            const file = zip.files[path];
-            if (file.dir) continue; // skip directories
-
-            // mount inside /rodir/cstrike
-            const targetPath = `/rodir/cstrike/${path}`;
-            const data = await file.async("uint8array");
-            files[targetPath] = data;
-        }
-        console.log("ZIP extracted, total files:", Object.keys(files).length);
-
-        // Initialize Xash3D
         Xash3D({
-            arguments: ['-windowed', '-game', 'cstrike', '+_vgui_menus', '0'],
+            arguments: ['-windowed', '-game', 'cstrike', '+_vgui_menus',  '0'],
             canvas: document.getElementById('canvas'),
-            ctx: document.getElementById('canvas').getContext('webgl2', {
-                alpha: false,
-                depth: true,
-                stencil: true,
-                antialias: true
-            }),
+            ctx: document.getElementById('canvas')
+                .getContext('webgl2', {
+                    alpha: false,
+                    depth: true,
+                    stencil: true,
+                    antialias: true
+                }),
             dynamicLibraries: [
                 "filesystem_stdio.wasm",
                 "libref_gles3compat.wasm",
@@ -66,38 +55,39 @@
                 "/rwdir/filesystem_stdio.so",
             ],
             onRuntimeInitialized: function () {
-                // Mount all files into FS
-                for (const path in files) {
-                    const dir = path.split('/').slice(0, -1).join('/');
-                    this.FS.mkdirTree(dir);
-                    this.FS.writeFile(path, files[path]);
-                }
-                this.FS.chdir('/rodir');
-                console.log("CS 1.6 files mounted. Ready to play!");
+                Object.keys(files)
+                    .forEach(k => {
+                        const dir = k.split('/')
+                            .slice(0, -1)
+                            .join('/');
+                        this.FS.mkdirTree(dir);
+                        this.FS.writeFile(k, files[k]);
+                    })
+                this.FS.chdir('/rodir')
             },
             locateFile: (p) => {
                 switch (p) {
                     case 'xash.wasm':
-                        return 'https://cdn.jsdelivr.net/npm/xash3d-fwgs@latest/dist/xash.wasm';
+                        return 'https://cdn.jsdelivr.net/npm/xash3d-fwgs@latest/dist/xash.wasm'
                     case '/rwdir/filesystem_stdio.so':
                     case 'filesystem_stdio.wasm':
-                        return 'https://cdn.jsdelivr.net/npm/xash3d-fwgs@latest/dist/filesystem_stdio.wasm';
+                        return 'https://cdn.jsdelivr.net/npm/xash3d-fwgs@latest/dist/filesystem_stdio.wasm'
                     case 'libref_gles3compat.wasm':
-                        return 'https://cdn.jsdelivr.net/npm/xash3d-fwgs@latest/dist/libref_gles3compat.wasm';
+                        return 'https://cdn.jsdelivr.net/npm/xash3d-fwgs@latest/dist/libref_gles3compat.wasm'
                     case 'cl_dlls/menu_emscripten_wasm32.wasm':
-                        return 'https://cdn.jsdelivr.net/npm/cs16-client@latest/dist/cl_dll/menu_emscripten_wasm32.wasm';
+                        return 'https://cdn.jsdelivr.net/npm/cs16-client@latest/dist/cl_dll/menu_emscripten_wasm32.wasm'
                     case 'dlls/cs_emscripten_wasm32.so':
-                        return 'https://cdn.jsdelivr.net/npm/cs16-client@latest/dist/dlls/cs_emscripten_wasm32.so';
+                        return 'https://cdn.jsdelivr.net/npm/cs16-client@latest/dist/dlls/cs_emscripten_wasm32.so'
                     case 'cl_dlls/client_emscripten_wasm32.wasm':
-                        return 'https://cdn.jsdelivr.net/npm/cs16-client@latest/dist/cl_dll/client_emscripten_wasm32.wasm';
+                        return 'https://cdn.jsdelivr.net/npm/cs16-client@latest/dist/cl_dll/client_emscripten_wasm32.wasm'
                     default:
-                        return p;
+                        return p
                 }
             },
-        });
+        })
     }
 
-    main();
+    main()
 </script>
 </body>
 </html>
