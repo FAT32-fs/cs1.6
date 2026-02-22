@@ -25,8 +25,39 @@
 
     async function main() {
         const files = {}
-        const res = await fetch('https://github.com/FAT32-fs/cs1.6/releases/download/zip/valve.zip')
-        const zip = await JSZip.loadAsync(await res.arrayBuffer());
+
+        const chunkUrls = [
+            './valve.zip.part1',
+            './valve.zip.part2',
+            './valve.zip.part3',
+            './valve.zip.part4',
+            './valve.zip.part5',
+        ];
+
+        console.log('Downloading chunks...');
+
+        const chunks = await Promise.all(
+            chunkUrls.map((url, i) =>
+                fetch(url).then(r => {
+                    console.log(`Chunk ${i + 1} downloaded`);
+                    return r.arrayBuffer();
+                })
+            )
+        );
+
+        console.log('Merging chunks...');
+
+        const totalLength = chunks.reduce((sum, c) => sum + c.byteLength, 0);
+        const merged = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of chunks) {
+            merged.set(new Uint8Array(chunk), offset);
+            offset += chunk.byteLength;
+        }
+
+        console.log('Loading zip...');
+
+        const zip = await JSZip.loadAsync(merged);
 
         await Promise.all(Object.keys(zip.files).map(async p => {
             const file = zip.files[p]
@@ -36,6 +67,8 @@
 
             files[path] = await file.async("uint8array")
         }))
+
+        console.log('Starting Xash3D...');
 
         Xash3D({
             arguments: ['-windowed', '-game', 'cstrike', '+_vgui_menus', '0'],
@@ -92,5 +125,3 @@
 </script>
 </body>
 </html>
-
-
