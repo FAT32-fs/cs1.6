@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-     <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-eval' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.skypack.dev blob:; worker-src 'self' blob:; connect-src 'self' https://cdn.jsdelivr.net https://cdn.skypack.dev blob:;">
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-eval' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.skypack.dev blob:; worker-src 'self' blob:; connect-src 'self' https://cdn.jsdelivr.net https://cdn.skypack.dev blob:;">
     <title>CS 1.6</title>
     <script src="coi-serviceworker.js"></script>
     <style>
@@ -30,12 +30,14 @@
     <script src="https://cdn.jsdelivr.net/npm/xash3d-fwgs@latest/dist/raw.js"></script>
 </head>
 <body>
-<div id="status">Loading chunks...</div>
+<div id="status">Loading...</div>
 <canvas id="canvas"></canvas>
 <script type="module">
     import JSZip from 'https://cdn.skypack.dev/jszip@3.10.1';
 
     const status = document.getElementById('status');
+    const CDN = 'https://cdn.jsdelivr.net/npm/xash3d-fwgs@latest/dist/';
+    const CS16 = 'https://cdn.jsdelivr.net/npm/cs16-client@latest/dist/';
 
     async function main() {
         const chunkUrls = [
@@ -47,7 +49,6 @@
         ];
 
         status.textContent = 'Downloading chunks...';
-
         const chunks = await Promise.all(
             chunkUrls.map((url, i) =>
                 fetch(url).then(async r => {
@@ -58,8 +59,13 @@
             )
         );
 
-        status.textContent = 'Merging chunks...';
+        status.textContent = 'Downloading engine...';
+        const wasmBinary = await fetch(CDN + 'xash.wasm').then(r => {
+            if (!r.ok) throw new Error('Failed to fetch xash.wasm');
+            return r.arrayBuffer();
+        });
 
+        status.textContent = 'Merging chunks...';
         const totalLength = chunks.reduce((sum, c) => sum + c.byteLength, 0);
         const merged = new Uint8Array(totalLength);
         let offset = 0;
@@ -69,10 +75,8 @@
         }
 
         status.textContent = 'Extracting zip...';
-
         const zip = await JSZip.loadAsync(merged);
         const files = {};
-
         await Promise.all(Object.keys(zip.files).map(async p => {
             const file = zip.files[p];
             if (file.dir) return;
@@ -80,21 +84,18 @@
         }));
 
         status.textContent = 'Starting game...';
-
         Xash3D({
             arguments: ['-windowed', '-game', 'cstrike', '+_vgui_menus', '0'],
             canvas: document.getElementById('canvas'),
             ctx: document.getElementById('canvas').getContext('webgl2', {
-                alpha: false,
-                depth: true,
-                stencil: true,
-                antialias: true
+                alpha: false, depth: true, stencil: true, antialias: true
             }),
+            wasmBinary,
             dynamicLibraries: [
                 "filesystem_stdio.wasm",
                 "libref_gles3compat.wasm",
                 "cl_dlls/menu_emscripten_wasm32.wasm",
-                "dlls/cs_emscripten_wasm32.so",
+                "dlls/cs_emscripten_wasm32.wasm",
                 "cl_dlls/client_emscripten_wasm32.wasm",
                 "/rwdir/filesystem_stdio.so",
             ],
@@ -108,23 +109,18 @@
                 status.style.display = 'none';
             },
             locateFile: (p) => {
-                const base = 'https://cdn.jsdelivr.net/npm/xash3d-fwgs@latest/dist/';
-                const cs16 = 'https://cdn.jsdelivr.net/npm/cs16-client@latest/dist/';
                 switch (p) {
-                    case 'xash.wasm':
-                        return base + 'xash.wasm';
                     case 'filesystem_stdio.wasm':
                     case '/rwdir/filesystem_stdio.so':
-                        return base + 'filesystem_stdio.wasm';
+                        return CDN + 'filesystem_stdio.wasm';
                     case 'libref_gles3compat.wasm':
-                        return base + 'libref_gles3compat.wasm';
+                        return CDN + 'libref_gles3compat.wasm';
                     case 'cl_dlls/menu_emscripten_wasm32.wasm':
-                        return cs16 + 'cl_dll/menu_emscripten_wasm32.wasm';
-                    case 'dlls/cs_emscripten_wasm32.so':
+                        return CS16 + 'cl_dll/menu_emscripten_wasm32.wasm';
                     case 'dlls/cs_emscripten_wasm32.wasm':
-                        return cs16 + 'dlls/cs_emscripten_wasm32.wasm';
+                        return CS16 + 'dlls/cs_emscripten_wasm32.wasm';
                     case 'cl_dlls/client_emscripten_wasm32.wasm':
-                        return cs16 + 'cl_dll/client_emscripten_wasm32.wasm';
+                        return CS16 + 'cl_dll/client_emscripten_wasm32.wasm';
                     default:
                         return p;
                 }
@@ -139,4 +135,3 @@
 </script>
 </body>
 </html>
-
