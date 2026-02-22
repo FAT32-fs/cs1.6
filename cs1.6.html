@@ -73,7 +73,7 @@
         });
 
         Xash3D({
-            arguments: ['-windowed', '-game', 'cstrike', '+_vgui_menus', '0', '-ref', 'webgl2'],
+            arguments: ['-windowed', '-game', 'cstrike', '+_vgui_menus', '0', '-ref', 'webgl2', '+sv_dll', 'dlls/yapb_emscripten_wasm32.wasm'],
             canvas,
             ctx,
             dynamicLibraries: [
@@ -124,5 +124,6 @@
 </script>
 </body>
 </html>
+
 
 
