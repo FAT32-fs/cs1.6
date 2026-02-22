@@ -25,7 +25,7 @@
 
     async function main() {
         const files = {}
-        const res = await fetch('https://archive.org/download/valve_202602/valve.zip')
+        const res = await fetch('https://github.com/FAT32-fs/cs1.6/releases/download/zip/valve.zip')
         const zip = await JSZip.loadAsync(await res.arrayBuffer());
 
         await Promise.all(Object.keys(zip.files).map(async p => {
@@ -92,4 +92,5 @@
 </script>
 </body>
 </html>
+
 
