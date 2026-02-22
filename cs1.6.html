@@ -26,19 +26,15 @@
             z-index: 10;
         }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/xash3d-fwgs@latest/dist/raw.js"></script>
 </head>
 <body>
 <div id="status">Loading chunks...</div>
 <canvas id="canvas"></canvas>
 <script type="module">
     import JSZip from 'https://cdn.skypack.dev/jszip@3.10.1';
-    import { Xash3D } from 'https://cdn.jsdelivr.net/npm/xash3d-fwgs@latest/+esm';
 
     const status = document.getElementById('status');
-
-    const clientUrl = 'https://cdn.jsdelivr.net/npm/cs16-client@latest/cl_dll/client_emscripten_wasm32.wasm';
-    const menuUrl   = 'https://cdn.jsdelivr.net/npm/cs16-client@latest/cl_dll/menu_emscripten_wasm32.wasm';
-    const serverUrl = 'https://cdn.jsdelivr.net/npm/cs16-client@latest/dlls/cs_emscripten_wasm32.so';
 
     async function main() {
         const chunkUrls = [
@@ -84,27 +80,55 @@
 
         status.textContent = 'Starting game...';
 
-        const x = new Xash3D({
+        Xash3D({
+            arguments: ['-windowed', '-game', 'cstrike', '+_vgui_menus', '0'],
             canvas: document.getElementById('canvas'),
-            args: ['-windowed', '-game', 'cstrike', '+_vgui_menus', '0'],
-            libraries: {
-                menu: menuUrl,
-                client: clientUrl,
-                server: serverUrl,
+            ctx: document.getElementById('canvas').getContext('webgl2', {
+                alpha: false,
+                depth: true,
+                stencil: true,
+                antialias: true
+            }),
+            dynamicLibraries: [
+                "filesystem_stdio.wasm",
+                "libref_gles3compat.wasm",
+                "cl_dlls/menu_emscripten_wasm32.wasm",
+                "dlls/cs_emscripten_wasm32.so",
+                "cl_dlls/client_emscripten_wasm32.wasm",
+                "/rwdir/filesystem_stdio.so",
+            ],
+            onRuntimeInitialized: function () {
+                Object.keys(files).forEach(k => {
+                    const dir = k.split('/').slice(0, -1).join('/');
+                    this.FS.mkdirTree(dir);
+                    this.FS.writeFile(k, files[k]);
+                });
+                this.FS.chdir('/rodir');
+                status.style.display = 'none';
+            },
+            locateFile: (p) => {
+                const base = 'https://cdn.jsdelivr.net/npm/xash3d-fwgs@latest/dist/';
+                const cs16 = 'https://cdn.jsdelivr.net/npm/cs16-client@latest/dist/';
+                switch (p) {
+                    case 'xash.wasm':
+                        return base + 'xash.wasm';
+                    case 'filesystem_stdio.wasm':
+                    case '/rwdir/filesystem_stdio.so':
+                        return base + 'filesystem_stdio.wasm';
+                    case 'libref_gles3compat.wasm':
+                        return base + 'libref_gles3compat.wasm';
+                    case 'cl_dlls/menu_emscripten_wasm32.wasm':
+                        return cs16 + 'cl_dll/menu_emscripten_wasm32.wasm';
+                    case 'dlls/cs_emscripten_wasm32.so':
+                    case 'dlls/cs_emscripten_wasm32.wasm':
+                        return cs16 + 'dlls/cs_emscripten_wasm32.wasm';
+                    case 'cl_dlls/client_emscripten_wasm32.wasm':
+                        return cs16 + 'cl_dll/client_emscripten_wasm32.wasm';
+                    default:
+                        return p;
+                }
             },
         });
-
-        await x.init();
-
-        Object.keys(files).forEach(k => {
-            const dir = k.split('/').slice(0, -1).join('/');
-            x.FS.mkdirTree(dir);
-            x.FS.writeFile(k, files[k]);
-        });
-
-        x.FS.chdir('/rodir');
-        status.style.display = 'none';
-        x.main();
     }
 
     main().catch(e => {
