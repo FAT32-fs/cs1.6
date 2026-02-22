@@ -80,7 +80,7 @@
     'filesystem_stdio.wasm',
     'libref_webgl2.wasm',
     'cl_dlls/menu_emscripten_wasm32.wasm',
-    'dlls/yapb_emscripten_wasm32.wasm',
+    'dlls/yapb.so',
     'cl_dlls/client_emscripten_wasm32.wasm',
     '/rwdir/filesystem_stdio.so',
 ],
@@ -108,8 +108,8 @@
                         return CS16 + 'cl_dlls/menu_emscripten_wasm32.wasm';
                     case 'cl_dlls/client_emscripten_wasm32.wasm':
                         return CS16 + 'cl_dlls/client_emscripten_wasm32.wasm';
-                    case 'dlls/yapb_emscripten_wasm32.wasm':
-                        return CS16 + 'dlls/yapb_emscripten_wasm32.wasm';
+                    case 'dlls/yapb.so':
+						return CS16 + 'dlls/yapb_emscripten_wasm32.wasm';
                     default:
                         return p;
                 }
