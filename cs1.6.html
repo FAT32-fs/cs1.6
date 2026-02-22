@@ -109,22 +109,23 @@
                 status.style.display = 'none';
             },
             locateFile: (p) => {
-                switch (p) {
-                    case 'filesystem_stdio.wasm':
-                    case '/rwdir/filesystem_stdio.so':
-                        return CDN + 'filesystem_stdio.wasm';
-                    case 'libref_gles3compat.wasm':
-                        return CDN + 'libref_gles3compat.wasm';
-                    case 'cl_dlls/menu_emscripten_wasm32.wasm':
-                        return CS16 + 'cl_dll/menu_emscripten_wasm32.wasm';
-                    case 'dlls/cs_emscripten_wasm32.wasm':
-                        return CS16 + 'dlls/cs_emscripten_wasm32.wasm';
-                    case 'cl_dlls/client_emscripten_wasm32.wasm':
-                        return CS16 + 'cl_dll/client_emscripten_wasm32.wasm';
-                    default:
-                        return p;
-                }
-            },
+    switch (p) {
+        case 'filesystem_stdio.wasm':
+        case '/rwdir/filesystem_stdio.so':
+            return 'https://cdn.jsdelivr.net/npm/xash3d-fwgs@latest/dist/filesystem_stdio.wasm';
+        case 'libref_gles3compat.wasm':
+            return 'https://cdn.jsdelivr.net/npm/xash3d-fwgs@latest/dist/libref_gles3compat.wasm';
+        case 'cl_dlls/menu_emscripten_wasm32.wasm':
+            return 'https://cdn.jsdelivr.net/npm/cs16-client@latest/cl_dll/menu_emscripten_wasm32.wasm';
+        case 'dlls/cs_emscripten_wasm32.so':
+        case 'dlls/cs_emscripten_wasm32.wasm':
+            return 'https://cdn.jsdelivr.net/npm/cs16-client@latest/dlls/cs_emscripten_wasm32.so';
+        case 'cl_dlls/client_emscripten_wasm32.wasm':
+            return 'https://cdn.jsdelivr.net/npm/cs16-client@latest/cl_dll/client_emscripten_wasm32.wasm';
+        default:
+            return p;
+    }
+},
         });
     }
 
@@ -135,3 +136,4 @@
 </script>
 </body>
 </html>
+
