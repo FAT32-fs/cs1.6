@@ -527,7 +527,11 @@
 
             recvfrom(fd, bufPtr, bufLen, flags, addrPtr, addrLenPtr) {
                 const pkt = recvQueue.shift();
-                if (!pkt) return -11; // EAGAIN — no data
+                if (!pkt) {
+                    if (!window._recvfromLogged) { window._recvfromLogged=true; console.log('[P2P] recvfrom called (EAGAIN)'); }
+                    return -11;
+                }
+                console.log('[P2P] recvfrom delivering pkt from', pkt.fromAddr);
 
                 const mod = window._xashMod;
                 if (!mod) return -1;
@@ -553,6 +557,7 @@
                 if (!mod || !addrPtr) return bufLen;
 
                 const { addr, port } = readSockaddr(mod.HEAPU8, addrPtr);
+                if (!window._sendtoLogged) { window._sendtoLogged=true; console.log('[P2P] sendto called! addr=',addr,'port=',port,'len=',bufLen); }
                 if (addr === '255.255.255.255' || addr === '0.0.0.0') return bufLen;
 
                 const [,, b3, b4] = addr.split('.').map(Number);
