@@ -369,6 +369,7 @@
 
         // Register handler and drain any buffered messages
         sigHandler = async msg => {
+            console.log(`[P2P] sigHandler received:`, Object.keys(msg)[0]);
             if (msg['pc:offer']) {
                 const { description, from } = msg['pc:offer'];
                 const pc = new RTCPeerConnection({ iceServers });
@@ -412,9 +413,11 @@
             const addrStr = `101.101.${targetId & 255}.${(targetId >> 8) & 255}`;
             const peerKey = `${myHostId}:${targetId}`;
             if (peers.has(peerKey)) return; // already connecting
+            console.log(`[P2P] createConnection -> targetId=${targetId} addr=${addrStr}`);
             const pc      = new RTCPeerConnection({ iceServers });
             const channel = pc.createDataChannel(addrStr, { maxRetransmits: 0, ordered: false });
             channel.addEventListener('open', () => {
+                console.log(`[P2P] DataChannel OPEN with ${targetId}`);
                 channels.set(targetId, channel);
                 const q = send_queue.get(`${addrStr}:27015`) || [];
                 while (q.length) channel.send(q.shift());
@@ -442,14 +445,20 @@
         }
 
         module.preConnectToServer = targetId => new Promise((resolve, reject) => {
-            createConnection(targetId, err => err ? reject(new Error(err)) : resolve());
+            console.log(`[P2P] preConnectToServer(${targetId})`);
+            createConnection(targetId, err => {
+                if (err) { console.error(`[P2P] preConnect FAILED:`, err); reject(new Error(err)); }
+                else { console.log(`[P2P] preConnect SUCCESS`); resolve(); }
+            });
         });
 
+        console.log(`[P2P] VirtualNetworkWrapper ready. myHostId=${myHostId}, buffered=${sigBuffer.length}`);
         module.net = {
             getHostId: () => myHostId,
             recvfrom: (fd, buf, len, flags, addrPtr, addrLenPtr) => {
                 const pkt = recv_queue.shift();
                 if (!pkt) { module.setValue(module.___errno_location(), 73, 'i32'); return -1; }
+                console.log(`[P2P] recvfrom: ${pkt.addr}:${pkt.port} len=${pkt.data.byteLength}`);
                 module.writeSockaddr(addrPtr, 2, pkt.addr, pkt.port, addrLenPtr);
                 module.HEAPU8.set(new Uint8Array(pkt.data), buf);
                 return pkt.data.byteLength;
@@ -458,6 +467,7 @@
                 const dst  = module.readSockaddr(addrPtr, addrLen);
                 const data = module.HEAPU8.subarray(buf, buf + len);
                 if (dst.addr === '255.255.255.255') return data.length;
+                if (!module._sendto_logged) { module._sendto_logged = true; console.log(`[P2P] sendto: first call to ${dst.addr}:${dst.port}`); }
                 const [,, b3, b4] = dst.addr.split('.').map(Number);
                 const targetId    = b3 | (b4 << 8);
                 const peerKey     = `${myHostId}:${targetId}`;
