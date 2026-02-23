@@ -560,14 +560,15 @@
             // SOCKFS builds URL as: baseUrl + hostname + ':' + port + '/' + rest
             // With Module.websocket.url='wss://p2p/', and target 101.101.X.Y:27015:
             // → 'wss://p2p/101.101.X.Y:27015/'
-            const m = url.match(/101\.101\.(\d+)\.(\d+):(\d+)/);
+            // SOCKFS builds: wss://101.101.X.Y:PORT/path
+            const m = url.match(/101[._]101[._](\d+)[._](\d+)[^\d](\d+)/);
             if (m) {
                 this._addr = `101.101.${m[1]}.${m[2]}`;
                 this._port = parseInt(m[3]);
                 this._key  = `${this._addr}:${this._port}`;
                 this._targetId = (parseInt(m[1])) | (parseInt(m[2]) << 8);
                 fakeSocketsByAddr.set(this._key, this);
-                console.log(`[P2P] FakeWebSocket created for ${this._key} targetId=${this._targetId}`);
+                console.log(`[P2P] FakeWebSocket created for ${this._key} targetId=${this._targetId} url=${url}`);
 
                 // Flush any packets that arrived before this socket was created
                 const pending = send_queue.get('recv:' + this._targetId) || [];
@@ -582,7 +583,7 @@
                     pending.forEach(ab => this._receive(ab));
                 }, 0);
             } else {
-                console.log(`[P2P] FakeWebSocket: non-P2P url=${url}, falling back to real WS`);
+                console.warn(`[P2P] FakeWebSocket: no 101.101 match in url=${url}`);
                 // Not a P2P address — shouldn't happen, but just open/close cleanly
                 setTimeout(() => {
                     this.readyState = 1;
@@ -747,7 +748,10 @@
             ],
             // Tell SOCKFS to use our fake URL base so FakeWebSocket catches
             // connections to 101.101.x.x addresses
-            websocket: { url: 'wss://p2p/', subprotocol: 'binary' },
+            // SOCKFS only appends host:port when url is exactly 'wss://'
+            // It builds: 'wss://' + '101.101.X.Y' + ':' + port + '/' + path
+            // FakeWebSocket then intercepts based on the 101.101. pattern
+            websocket: { url: 'wss://', subprotocol: 'binary' },
             onRuntimeInitialized: function () {
                 Object.entries(files).forEach(([k, v]) => {
                     const dir = k.split('/').slice(0, -1).join('/');
