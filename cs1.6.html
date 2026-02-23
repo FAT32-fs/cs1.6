@@ -5,51 +5,195 @@
     <title>CS 1.6</title>
     <script src="coi-serviceworker.js"></script>
     <style>
+        * { box-sizing: border-box; }
         canvas { width: 100vw; height: 100vh; top: 0; left: 0; position: fixed; }
         body { margin: 0; background: black; }
-        #status { color: white; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); font-family: monospace; font-size: 18px; z-index: 10; text-align: center; }
+        #status { color: white; position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+                  font-family: monospace; font-size: 18px; z-index: 10; text-align: center; white-space: pre-line; }
+
+        /* ── Lobby ── */
         #lobby {
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            position: fixed; inset: 0; background: #111; z-index: 20;
-            font-family: monospace; color: white; gap: 16px;
+            position: fixed; inset: 0; background: #0b0b0b; z-index: 20;
+            font-family: monospace; color: white;
+            overflow-y: auto; padding: 24px 0;
         }
-        #lobby h2 { margin: 0; font-size: 24px; letter-spacing: 2px; color: #f90; }
-        #lobby input {
-            padding: 8px 12px; font-size: 18px; font-family: monospace;
-            background: #222; border: 1px solid #555; color: white; width: 200px; text-align: center;
+        h2 { margin: 0 0 24px; font-size: 24px; letter-spacing: 4px; color: #f90; text-align: center; }
+
+        .panels { display: flex; gap: 32px; align-items: flex-start; }
+
+        /* ── Panel ── */
+        .panel { display: flex; flex-direction: column; gap: 14px; width: 280px; }
+        .panel-title { color: #555; font-size: 10px; text-transform: uppercase; letter-spacing: 2px; border-bottom: 1px solid #1e1e1e; padding-bottom: 6px; }
+
+        /* ── Form rows ── */
+        .field { display: flex; flex-direction: column; gap: 4px; }
+        .field label { color: #666; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
+        .field input[type=text], .field input[type=number] {
+            padding: 8px 10px; font-size: 15px; font-family: monospace;
+            background: #141414; border: 1px solid #2e2e2e; color: white; width: 100%;
         }
-        #lobby button {
-            padding: 10px 28px; font-size: 16px; font-family: monospace;
-            background: #f90; border: none; color: black; cursor: pointer; font-weight: bold;
+        .field input:focus { outline: none; border-color: #f90; }
+
+        /* ── Toggle ── */
+        .toggle-row { display: flex; align-items: center; justify-content: space-between; }
+        .toggle-row .toggle-label { color: #aaa; font-size: 12px; }
+        .toggle {
+            position: relative; width: 40px; height: 22px; cursor: pointer;
         }
-        #lobby button:hover { background: #ffb733; }
-        #lobby .row { display: flex; gap: 12px; }
-        #lobby .hint { color: #888; font-size: 13px; }
-        #host-id-display { display: none; color: #0f0; font-size: 22px; letter-spacing: 4px; }
+        .toggle input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider {
+            position: absolute; inset: 0; background: #222; border: 1px solid #333; transition: .2s;
+        }
+        .toggle-slider:before {
+            content: ''; position: absolute; width: 14px; height: 14px;
+            left: 3px; top: 3px; background: #555; transition: .2s;
+        }
+        .toggle input:checked + .toggle-slider { background: #1a1200; border-color: #f90; }
+        .toggle input:checked + .toggle-slider:before { background: #f90; transform: translateX(18px); }
+
+        /* ── Range slider ── */
+        input[type=range] {
+            -webkit-appearance: none; width: 100%; height: 4px;
+            background: #2a2a2a; outline: none; cursor: pointer;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 14px; height: 14px; background: #f90; cursor: pointer;
+        }
+
+        /* ── Buttons ── */
+        .btn {
+            padding: 11px 0; font-size: 13px; font-family: monospace; width: 100%;
+            background: #f90; border: none; color: black; cursor: pointer; font-weight: bold; letter-spacing: 1px;
+        }
+        .btn:hover { background: #ffb733; }
+        .btn:disabled { background: #222; color: #555; cursor: default; }
+        .hint { color: #444; font-size: 10px; text-align: center; }
+
+        /* ── Host ID display ── */
+        #host-id-display {
+            display: none; background: #091200; border: 1px solid #1d3300;
+            padding: 12px; text-align: center;
+        }
+        #host-id-display .lbl { color: #3d6600; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; }
+        #host-id-display .val { color: #66ff00; font-size: 38px; letter-spacing: 8px; font-weight: bold; }
+
+        .divider { color: #1e1e1e; font-size: 12px; align-self: center; padding-top: 60px; }
+
+        /* ── Map picker ── */
+        .map-tabs { display: flex; }
+        .map-tab {
+            flex: 1; padding: 5px 0; font-size: 10px; font-family: monospace; cursor: pointer;
+            background: #111; border: 1px solid #1e1e1e; color: #444; letter-spacing: 1px; border-bottom: none;
+        }
+        .map-tab.active { background: #140e00; border-color: #f90; border-bottom: 1px solid #140e00; color: #f90; z-index: 1; }
+        .map-tab:hover:not(.active) { color: #999; }
+        .map-grid {
+            display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px;
+            max-height: 140px; overflow-y: auto;
+            border: 1px solid #1e1e1e; padding: 4px; background: #0d0d0d;
+        }
+        .map-grid::-webkit-scrollbar { width: 3px; }
+        .map-grid::-webkit-scrollbar-thumb { background: #2a2a2a; }
+        .map-cell {
+            padding: 6px 2px; font-size: 10px; font-family: monospace; text-align: center; cursor: pointer;
+            background: #111; border: 1px solid #1a1a1a; color: #666;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .map-cell:hover { border-color: #555; color: #ccc; background: #1a1a1a; }
+        .map-cell.sel { border-color: #f90 !important; color: #f90 !important; background: #140e00 !important; }
+        .sel-map { font-size: 10px; color: #555; text-align: right; padding-top: 2px; }
+        .sel-map b { color: #f90; }
+        #map-section.locked { pointer-events: none; opacity: 0.35; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/xash3d-fwgs@latest/dist/raw.js"></script>
 </head>
 <body>
 
-<!-- Lobby UI shown before game starts -->
 <div id="lobby">
-    <h2>CS 1.6 MULTIPLAYER</h2>
+    <h2>CS 1.6</h2>
+    <div class="panels">
 
-    <div id="host-section">
-        <button id="btn-host">HOST GAME</button>
-        <div id="host-id-display">Your ID: <span id="host-id-value"></span></div>
-        <div class="hint" id="host-hint" style="display:none">Share this ID with friends, then press START</div>
-        <button id="btn-start" style="display:none">START GAME</button>
-    </div>
+        <!-- ── HOST PANEL ── -->
+        <div class="panel">
+            <div class="panel-title">Host a game</div>
 
-    <div style="color:#555">— or —</div>
+            <!-- Player name -->
+            <div class="field">
+                <label>Player Name</label>
+                <input type="text" id="host-name" placeholder="Player" maxlength="32" value="Player" />
+            </div>
 
-    <div id="join-section">
-        <div class="row">
-            <input id="join-id" type="number" placeholder="Host ID" min="1" />
-            <button id="btn-join">JOIN</button>
+            <!-- Map picker -->
+            <div class="field" id="map-section">
+                <label>Map</label>
+                <div class="map-tabs">
+                    <button class="map-tab active" data-cat="de">Bomb</button>
+                    <button class="map-tab" data-cat="cs">Hostage</button>
+                    <button class="map-tab" data-cat="as">Assassin</button>
+                    <button class="map-tab" data-cat="fy">Fun</button>
+                </div>
+                <div class="map-grid" id="map-grid"></div>
+                <div class="sel-map">Selected: <b id="map-label">de_dust2</b></div>
+            </div>
+
+            <!-- Bots toggle -->
+            <div class="field">
+                <div class="toggle-row">
+                    <span class="toggle-label">Add Bots</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="bots-toggle" />
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Bots per team (shown when toggle on) -->
+            <div class="field" id="bots-count-row" style="display:none">
+                <label>Bots per team</label>
+                <input type="number" id="bots-per-team" value="3" min="1" max="9" />
+            </div>
+
+            <!-- Volume -->
+            <div class="field">
+                <label>Volume: <span id="vol-display">80%</span></label>
+                <input type="range" id="volume-slider" min="0" max="100" value="80" />
+            </div>
+
+            <button class="btn" id="btn-host">HOST GAME</button>
+            <div id="host-id-display">
+                <div class="lbl">Your ID — share with friends</div>
+                <div class="val" id="host-id-value"></div>
+            </div>
+            <button class="btn" id="btn-start" style="display:none">▶ START GAME</button>
+            <div class="hint" id="host-hint" style="display:none">Share your ID, then press Start</div>
         </div>
-        <div class="hint">Enter the host's ID number</div>
+
+        <div class="divider">— or —</div>
+
+        <!-- ── JOIN PANEL ── -->
+        <div class="panel">
+            <div class="panel-title">Join a game</div>
+
+            <div class="field">
+                <label>Player Name</label>
+                <input type="text" id="join-name" placeholder="Player" maxlength="32" value="Player" />
+            </div>
+
+            <div class="field">
+                <label>Volume: <span id="join-vol-display">80%</span></label>
+                <input type="range" id="join-volume-slider" min="0" max="100" value="80" />
+            </div>
+
+            <div class="field">
+                <label>Host ID</label>
+                <input type="number" id="join-id" placeholder="e.g. 1" min="1" />
+            </div>
+
+            <button class="btn" id="btn-join">JOIN GAME</button>
+            <div class="hint">Ask the host for their ID number</div>
+        </div>
+
     </div>
 </div>
 
@@ -60,107 +204,166 @@
     import JSZip from 'https://cdn.skypack.dev/jszip@3.10.1';
 
     // ─── CONFIG ──────────────────────────────────────────────────────────────
-    const SIGNAL_URL = 'wss://cs16-p2p.up.railway.app/hl'; // <-- replace this
+    const SIGNAL_URL = 'wss://cs16-p2p.up.railway.app/hl';
     const CDN  = 'https://cdn.jsdelivr.net/npm/xash3d-fwgs@latest/dist/';
     const CS16 = 'https://cdn.jsdelivr.net/npm/cs16-client@latest/dist/cstrike/';
 
     const iceServers = [
         { urls: 'stun:stun.relay.metered.ca:80' },
-        { urls: 'turn:standard.relay.metered.ca:80',              username: '775036bccfb97412ac56ae8a', credential: 'S0nMcJRAuceCFQqK' },
-        { urls: 'turn:standard.relay.metered.ca:80?transport=tcp', username: '775036bccfb97412ac56ae8a', credential: 'S0nMcJRAuceCFQqK' },
-        { urls: 'turn:standard.relay.metered.ca:443',              username: '775036bccfb97412ac56ae8a', credential: 'S0nMcJRAuceCFQqK' },
-        { urls: 'turns:standard.relay.metered.ca:443?transport=tcp', username: '775036bccfb97412ac56ae8a', credential: 'S0nMcJRAuceCFQqK' },
+        { urls: 'turn:standard.relay.metered.ca:80',                username: '775036bccfb97412ac56ae8a', credential: 'S0nMcJRAuceCFQqK' },
+        { urls: 'turn:standard.relay.metered.ca:80?transport=tcp',  username: '775036bccfb97412ac56ae8a', credential: 'S0nMcJRAuceCFQqK' },
+        { urls: 'turn:standard.relay.metered.ca:443',               username: '775036bccfb97412ac56ae8a', credential: 'S0nMcJRAuceCFQqK' },
+        { urls: 'turns:standard.relay.metered.ca:443?transport=tcp',username: '775036bccfb97412ac56ae8a', credential: 'S0nMcJRAuceCFQqK' },
     ];
-    // ─────────────────────────────────────────────────────────────────────────
 
-    const status  = document.getElementById('status');
-    const lobby   = document.getElementById('lobby');
+    // ─── Maps ────────────────────────────────────────────────────────────────
+    const MAPS = {
+        de: ['de_dust2','de_dust','de_inferno','de_nuke','de_train','de_aztec',
+             'de_cbble','de_chateau','de_piranesi','de_port','de_prodigy',
+             'de_storm','de_survivor','de_torn','de_vegas'],
+        cs: ['cs_italy','cs_office','cs_assault','cs_militia',
+             'cs_havana','cs_backalley','cs_estate','cs_siege'],
+        as: ['as_oilrig','as_highrise'],
+        fy: ['fy_pool_day','fy_iceworld'],
+    };
+    let selectedMap = 'de_dust2';
+    let activeTab   = 'de';
 
-    // State set by lobby UI before game starts
-    let myHostId    = null;   // assigned by server
-    let joinTargetId = null;  // set if joining someone else
+    function renderMaps() {
+        const grid = document.getElementById('map-grid');
+        // Clear grid
+        while (grid.firstChild) grid.removeChild(grid.firstChild);
+        MAPS[activeTab].forEach(m => {
+            const el = document.createElement('div');
+            el.className = 'map-cell' + (m === selectedMap ? ' sel' : '');
+            el.textContent = m;
+            el.title = m;
+            el.addEventListener('click', () => {
+                selectedMap = m;
+                document.getElementById('map-label').textContent = m;
+                renderMaps();
+            });
+            grid.appendChild(el);
+        });
+    }
 
-    // ── Lobby UI ─────────────────────────────────────────────────────────────
-    let sigSocket = null;
-    let sigReady  = false;
+    document.querySelectorAll('.map-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.map-tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            activeTab = tab.dataset.cat;
+            // If selected map not in new tab, pick first
+            if (!MAPS[activeTab].includes(selectedMap)) {
+                selectedMap = MAPS[activeTab][0];
+                document.getElementById('map-label').textContent = selectedMap;
+            }
+            renderMaps();
+        });
+    });
+    renderMaps();
+
+    // ─── Bots toggle ─────────────────────────────────────────────────────────
+    document.getElementById('bots-toggle').addEventListener('change', function() {
+        document.getElementById('bots-count-row').style.display = this.checked ? 'flex' : 'none';
+    });
+
+    // ─── Volume sliders ───────────────────────────────────────────────────────
+    document.getElementById('volume-slider').addEventListener('input', function() {
+        document.getElementById('vol-display').textContent = this.value + '%';
+    });
+    document.getElementById('join-volume-slider').addEventListener('input', function() {
+        document.getElementById('join-vol-display').textContent = this.value + '%';
+    });
+
+    // ─── State ───────────────────────────────────────────────────────────────
+    const statusEl   = document.getElementById('status');
+    const lobby      = document.getElementById('lobby');
+    let myHostId     = null;
+    let joinTargetId = null;
+    let sigSocket    = null;
+    let playerName   = 'Player';
+    let volumeVal    = 0.8;
+    let botsEnabled  = false;
+    let botsPerTeam  = 3;
 
     function connectSignaling() {
         return new Promise((resolve, reject) => {
             sigSocket = new WebSocket(SIGNAL_URL);
             sigSocket.onmessage = e => {
                 const msg = JSON.parse(e.data);
-                if (msg.hostId !== undefined) {
-                    myHostId = msg.hostId;
-                    resolve(msg.hostId);
-                }
+                if (msg.hostId !== undefined) { myHostId = msg.hostId; resolve(msg.hostId); }
             };
-            sigSocket.onerror = reject;
+            sigSocket.onerror = () => reject(new Error('WebSocket connection failed'));
+            sigSocket.onclose  = e => { if (!myHostId) reject(new Error('Connection closed')); };
         });
     }
 
-    document.getElementById('btn-host').onclick = async () => {
-        document.getElementById('btn-host').disabled = true;
-        document.getElementById('btn-host').textContent = 'Connecting...';
+    // ─── Host ────────────────────────────────────────────────────────────────
+    document.getElementById('btn-host').addEventListener('click', async () => {
+        const btn = document.getElementById('btn-host');
+        btn.disabled = true; btn.textContent = 'Connecting...';
         try {
             const id = await connectSignaling();
             document.getElementById('host-id-value').textContent = id;
             document.getElementById('host-id-display').style.display = 'block';
+            document.getElementById('btn-start').style.display = 'block';
             document.getElementById('host-hint').style.display = 'block';
-            document.getElementById('btn-start').style.display = 'inline-block';
-            document.getElementById('btn-host').style.display = 'none';
+            document.getElementById('map-section').classList.add('locked');
+            btn.style.display = 'none';
         } catch(e) {
-            alert('Could not connect to signaling server: ' + e);
-            document.getElementById('btn-host').disabled = false;
-            document.getElementById('btn-host').textContent = 'HOST GAME';
+            alert('Could not connect to signaling server:\n' + e.message);
+            btn.disabled = false; btn.textContent = 'HOST GAME';
         }
-    };
+    });
 
-    document.getElementById('btn-start').onclick = () => {
+    document.getElementById('btn-start').addEventListener('click', () => {
+        playerName  = (document.getElementById('host-name').value.trim() || 'Player');
+        volumeVal   = parseInt(document.getElementById('volume-slider').value) / 100;
+        botsEnabled = document.getElementById('bots-toggle').checked;
+        botsPerTeam = parseInt(document.getElementById('bots-per-team').value) || 3;
         lobby.style.display = 'none';
-        status.style.display = 'block';
+        statusEl.style.display = 'block';
         startGame();
-    };
+    });
 
-    document.getElementById('btn-join').onclick = async () => {
+    // ─── Join ────────────────────────────────────────────────────────────────
+    document.getElementById('btn-join').addEventListener('click', async () => {
         const id = parseInt(document.getElementById('join-id').value);
         if (!id) return alert('Enter a valid host ID');
         joinTargetId = id;
-        document.getElementById('btn-join').disabled = true;
-        document.getElementById('btn-join').textContent = 'Connecting...';
+        playerName   = (document.getElementById('join-name').value.trim() || 'Player');
+        volumeVal    = parseInt(document.getElementById('join-volume-slider').value) / 100;
+        const btn = document.getElementById('btn-join');
+        btn.disabled = true; btn.textContent = 'Connecting...';
         try {
             await connectSignaling();
             lobby.style.display = 'none';
-            status.style.display = 'block';
+            statusEl.style.display = 'block';
             startGame();
         } catch(e) {
-            alert('Could not connect to signaling server: ' + e);
-            document.getElementById('btn-join').disabled = false;
-            document.getElementById('btn-join').textContent = 'JOIN';
+            alert('Could not connect to signaling server:\n' + e.message);
+            btn.disabled = false; btn.textContent = 'JOIN GAME';
+            joinTargetId = null;
         }
-    };
+    });
 
-    // ── VirtualNetworkWrapper (adapted from turch.in) ─────────────────────────
-    // Injected into Emscripten module via preRun, replaces UDP socket syscalls
-    // with WebRTC DataChannels routed through our signaling server.
+    // ─── VirtualNetworkWrapper ───────────────────────────────────────────────
     function VirtualNetworkWrapper(module) {
-        const peers    = new Map();   // key -> RTCPeerConnection
-        const channels = new Map();   // fdescriptor -> RTCDataChannel
-        const sockets  = new Map();
-        const send_queue = new Map(); // "addr:port" -> queued packets
-        const recv_queue = [];        // { addr, data }
+        const peers      = new Map();
+        const channels   = new Map();
+        const send_queue = new Map();
+        const recv_queue = [];
+        const ws = sigSocket;
 
-        const ws = sigSocket; // reuse already-open signaling socket
-
-        // Handle incoming signaling messages (offers/answers/ICE from peers)
         ws.addEventListener('message', async e => {
-            const msg = JSON.parse(e.data);
-            if (msg.hostId !== undefined) return; // already handled
+            let msg;
+            try { msg = JSON.parse(e.data); } catch { return; }
+            if (msg.hostId !== undefined) return;
 
             if (msg['pc:offer']) {
                 const { description, from } = msg['pc:offer'];
                 const pc = new RTCPeerConnection({ iceServers });
                 peers.set(`${myHostId}:${from}`, pc);
-
                 pc.addEventListener('datachannel', ({ channel }) => {
                     channel.addEventListener('open', () => channels.set(from, channel));
                     channel.addEventListener('message', async ({ data }) =>
@@ -168,33 +371,28 @@
                             addr: `101.101.${from & 255}.${(from >> 8) & 255}`,
                             port: 27015,
                             data: data instanceof Blob ? await data.arrayBuffer() : data
-                        })
-                    );
+                        }));
                     channel.addEventListener('close', () => channels.delete(from));
                 });
-
                 pc.addEventListener('icecandidate', ({ candidate }) => {
                     if (candidate) ws.send(JSON.stringify({ 'pc:ice-candidate': { candidate, from: myHostId, to: from } }));
                 });
-
                 await pc.setRemoteDescription(description);
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
                 ws.send(JSON.stringify({ 'pc:answer': { description: pc.localDescription, from: myHostId, to: from } }));
                 return;
             }
-
             if (msg['pc:answer']) {
                 const { description, from } = msg['pc:answer'];
                 const pc = peers.get(`${myHostId}:${from}`);
                 if (pc) await pc.setRemoteDescription(description);
                 return;
             }
-
             if (msg['pc:ice-candidate']) {
                 const { candidate, from } = msg['pc:ice-candidate'];
                 const pc = peers.get(`${myHostId}:${from}`);
-                if (pc) await pc.addIceCandidate(candidate);
+                if (pc) await pc.addIceCandidate(candidate).catch(() => {});
                 return;
             }
         });
@@ -202,41 +400,29 @@
         function createConnection(targetId, onReady) {
             const addrStr = `101.101.${targetId & 255}.${(targetId >> 8) & 255}`;
             const peerKey = `${myHostId}:${targetId}`;
-
-            const pc = new RTCPeerConnection({ iceServers });
+            if (peers.has(peerKey)) return; // already connecting
+            const pc      = new RTCPeerConnection({ iceServers });
             const channel = pc.createDataChannel(addrStr, { maxRetransmits: 0, ordered: false });
-
             channel.addEventListener('open', () => {
                 channels.set(targetId, channel);
-                // flush queued packets
                 const q = send_queue.get(`${addrStr}:27015`) || [];
                 while (q.length) channel.send(q.shift());
                 onReady?.();
             });
             channel.addEventListener('message', async ({ data }) =>
                 recv_queue.push({
-                    addr: addrStr,
-                    port: 27015,
+                    addr: addrStr, port: 27015,
                     data: data instanceof Blob ? await data.arrayBuffer() : data
-                })
-            );
+                }));
             channel.addEventListener('close', () => channels.delete(targetId));
-
             peers.set(peerKey, pc);
-
             pc.addEventListener('icecandidate', ({ candidate }) => {
                 if (candidate) ws.send(JSON.stringify({ 'pc:ice-candidate': { candidate, from: myHostId, to: targetId } }));
             });
             pc.addEventListener('connectionstatechange', () => {
-                if (pc.connectionState === 'failed') {
-                    onReady?.(pc.connectionState);
-                    pc.restartIce();
-                }
-                if (pc.connectionState === 'closed' || pc.connectionState === 'disconnected') {
-                    peers.delete(peerKey);
-                }
+                if (pc.connectionState === 'failed') { onReady?.('failed'); pc.restartIce(); }
+                if (['closed','disconnected'].includes(pc.connectionState)) peers.delete(peerKey);
             });
-
             pc.createOffer()
               .then(d => pc.setLocalDescription(d))
               .then(() => ws.send(JSON.stringify({
@@ -244,76 +430,93 @@
               })));
         }
 
-        // preConnectToServer: called by game code to connect to a specific peer
         module.preConnectToServer = targetId => new Promise((resolve, reject) => {
-            createConnection(targetId, err => err ? reject(err) : resolve());
+            createConnection(targetId, err => err ? reject(new Error(err)) : resolve());
         });
 
-        // Expose hostId and net syscall overrides to the engine
         module.net = {
             getHostId: () => myHostId,
-
             recvfrom: (fd, buf, len, flags, addrPtr, addrLenPtr) => {
                 const pkt = recv_queue.shift();
-                if (!pkt) {
-                    module.setValue(module.___errno_location(), 73, 'i32'); // EAGAIN
-                    return -1;
-                }
+                if (!pkt) { module.setValue(module.___errno_location(), 73, 'i32'); return -1; }
                 module.writeSockaddr(addrPtr, 2, pkt.addr, pkt.port, addrLenPtr);
                 module.HEAPU8.set(new Uint8Array(pkt.data), buf);
                 return pkt.data.byteLength;
             },
-
             sendto: (fd, buf, len, flags, addrPtr, addrLen) => {
                 const dst  = module.readSockaddr(addrPtr, addrLen);
                 const data = module.HEAPU8.subarray(buf, buf + len);
-                if (dst.addr === '255.255.255.255') return data.length; // broadcast, ignore
-
+                if (dst.addr === '255.255.255.255') return data.length;
                 const [,, b3, b4] = dst.addr.split('.').map(Number);
-                const targetId = b3 | (b4 << 8);
-                const peerKey  = `${myHostId}:${targetId}`;
-
+                const targetId    = b3 | (b4 << 8);
+                const peerKey     = `${myHostId}:${targetId}`;
                 if (peers.has(peerKey) && channels.has(targetId)) {
-                    channels.get(targetId).send(data);
-                    return data.length;
+                    channels.get(targetId).send(data.slice()); return data.length;
                 }
-
-                // Queue packet and start connecting if not already
                 const qKey = `${dst.addr}:${dst.port}`;
-                if (!send_queue.has(qKey)) {
-                    send_queue.set(qKey, []);
-                    createConnection(targetId, null);
-                }
+                if (!send_queue.has(qKey)) send_queue.set(qKey, []);
                 send_queue.get(qKey).push(data.slice());
+                createConnection(targetId, null);
                 return data.length;
             },
         };
     }
 
-    // ── Game boot ─────────────────────────────────────────────────────────────
+    // ─── Bot names (balanced teams) ──────────────────────────────────────────
+    // Bot profiles available in CS 1.6 by skill level
+    const BOT_PROFILES = {
+        ct: ['Phoenix','Eagle','Hawk','Recon','Shadow'],
+        t:  ['Cobra','Viper','Scorpion','Talon','Dagger'],
+    };
+
+    function getBotCommands(perTeam) {
+        const cmds = [];
+        // Set quota and join mode
+        cmds.push(`bot_quota ${perTeam * 2}`);
+        cmds.push('bot_quota_match_style 0'); // fill to quota
+        cmds.push('bot_difficulty 1');
+        cmds.push('bot_join_after_player 0');
+        cmds.push('bot_auto_vacate 0');
+
+        // Add CT bots
+        for (let i = 0; i < perTeam; i++) {
+            const name = BOT_PROFILES.ct[i % BOT_PROFILES.ct.length] + (i >= BOT_PROFILES.ct.length ? i : '');
+            cmds.push(`bot_join_team ct`);
+            cmds.push(`addbot`);
+        }
+        // Add T bots
+        for (let i = 0; i < perTeam; i++) {
+            const name = BOT_PROFILES.t[i % BOT_PROFILES.t.length] + (i >= BOT_PROFILES.t.length ? i : '');
+            cmds.push(`bot_join_team t`);
+            cmds.push(`addbot`);
+        }
+        // Reset join team to any
+        cmds.push('bot_join_team any');
+        return cmds;
+    }
+
+    // ─── Game boot ───────────────────────────────────────────────────────────
     async function startGame() {
         const chunkUrls = [
             './valve.zip.part1', './valve.zip.part2', './valve.zip.part3',
             './valve.zip.part4', './valve.zip.part5', './valve.zip.part6',
         ];
 
-        status.textContent = 'Downloading game chunks...';
+        statusEl.textContent = 'Downloading game chunks...';
         const chunks = await Promise.all(
-            chunkUrls.map((url, i) =>
-                fetch(url).then(async r => {
-                    if (!r.ok) throw new Error(`Chunk ${i + 1} not found`);
-                    return r.arrayBuffer();
-                })
-            )
+            chunkUrls.map((url, i) => fetch(url).then(async r => {
+                if (!r.ok) throw new Error(`Chunk ${i + 1} not found`);
+                return r.arrayBuffer();
+            }))
         );
 
-        status.textContent = 'Merging chunks...';
-        const totalLength = chunks.reduce((sum, c) => sum + c.byteLength, 0);
+        statusEl.textContent = 'Merging chunks...';
+        const totalLength = chunks.reduce((s, c) => s + c.byteLength, 0);
         const merged = new Uint8Array(totalLength);
         let offset = 0;
         for (const chunk of chunks) { merged.set(new Uint8Array(chunk), offset); offset += chunk.byteLength; }
 
-        status.textContent = 'Extracting zip...';
+        statusEl.textContent = 'Extracting zip...';
         const zip = await JSZip.loadAsync(merged);
         const files = {};
         await Promise.all(Object.keys(zip.files).map(async p => {
@@ -322,20 +525,42 @@
             files[`/rodir/${p}`] = await file.async('uint8array');
         }));
 
-        status.textContent = 'Starting game...';
-
+        statusEl.textContent = 'Starting game...';
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('webgl2', {
             alpha: false, depth: true, stencil: true, antialias: false,
-            powerPreference: 'high-performance', preserveDrawingBuffer: true,
-            failIfMajorPerformanceCaveat: false
+            powerPreference: 'high-performance', preserveDrawingBuffer: true, failIfMajorPerformanceCaveat: false
         });
 
+        // Build launch arguments
+        const vol = volumeVal.toFixed(2);
+        const gameArgs = [
+            '-windowed', '-game', 'cstrike', '+_vgui_menus', '0',
+            '-ref', 'webgl2', '+maxplayers', '16',
+            `+name`, playerName,
+            `+volume`, vol,
+        ];
+
+        if (joinTargetId !== null) {
+            // Joiner — connect straight to host IP
+            const ip = `101.101.${joinTargetId & 255}.${(joinTargetId >> 8) & 255}`;
+            gameArgs.push('+connect', ip);
+        } else {
+            // Host — start listen server on chosen map
+            gameArgs.push('+map', selectedMap);
+            if (botsEnabled) {
+                gameArgs.push('+bot_quota', String(botsPerTeam * 2));
+                gameArgs.push('+bot_join_after_player', '0');
+                gameArgs.push('+bot_difficulty', '1');
+                gameArgs.push('+bot_auto_vacate', '0');
+            } else {
+                gameArgs.push('+bot_quota', '0');
+            }
+        }
+
         Xash3D({
-            arguments: ['-windowed', '-game', 'cstrike', '+_vgui_menus', '0', '-ref', 'webgl2',
-                        '+bot_quota', '0', '+bot_join_after_player', '0', '+bot_difficulty', '1'],
-            canvas,
-            ctx,
+            arguments: gameArgs,
+            canvas, ctx,
             dynamicLibraries: [
                 'filesystem_stdio.wasm', 'libref_webgl2.wasm',
                 'cl_dlls/menu_emscripten_wasm32.wasm',
@@ -344,22 +569,12 @@
                 '/rwdir/filesystem_stdio.so',
             ],
             preRun: [
-                // Inject P2P networking before engine starts
                 function(module) {
                     VirtualNetworkWrapper(module);
-
-                    // If joining, auto-connect to host after engine init
                     if (joinTargetId !== null) {
-                        const origInit = module.onRuntimeInitialized;
-                        module.onRuntimeInitialized = function() {
-                            origInit?.call(this);
-                            const ip = `101.101.${joinTargetId & 255}.${(joinTargetId >> 8) & 255}`;
-                            setTimeout(() => {
-                                module.preConnectToServer(joinTargetId).then(() => {
-                                    module.executeString?.(`connect ${ip}`);
-                                });
-                            }, 2000);
-                        };
+                        module.addRunDependency('webrtc-preconnect');
+                        module.preConnectToServer(joinTargetId)
+                            .finally(() => module.removeRunDependency('webrtc-preconnect'));
                     }
                 }
             ],
@@ -370,31 +585,32 @@
                     this.FS.writeFile(k, v);
                 });
                 this.FS.chdir('/rodir');
-                status.style.display = 'none';
+                statusEl.style.display = 'none';
+
+                // After map loads, add balanced bots
+                if (joinTargetId === null && botsEnabled) {
+                    const mod = this;
+                    // Delay to let map finish loading
+                    setTimeout(() => {
+                        getBotCommands(botsPerTeam).forEach(cmd => mod.executeString?.(cmd));
+                    }, 5000);
+                }
             },
             locateFile: (p) => {
                 switch (p) {
-                    case 'xash.wasm':                           return CDN + 'xash.wasm';
+                    case 'xash.wasm':                              return CDN + 'xash.wasm';
                     case 'filesystem_stdio.wasm':
-                    case '/rwdir/filesystem_stdio.so':          return CDN + 'filesystem_stdio.wasm';
-                    case 'libref_webgl2.wasm':                  return CDN + 'libref_webgl2.wasm';
-                    case 'libref_soft.wasm':                    return CDN + 'libref_soft.wasm';
-                    case 'cl_dlls/menu_emscripten_wasm32.wasm': return CS16 + 'cl_dlls/menu_emscripten_wasm32.wasm';
-                    case 'dlls/cs_emscripten_wasm32.wasm':      return CS16 + 'dlls/cs_emscripten_wasm32.wasm';
-                    case 'cl_dlls/client_emscripten_wasm32.wasm': return CS16 + 'cl_dlls/client_emscripten_wasm32.wasm';
+                    case '/rwdir/filesystem_stdio.so':             return CDN + 'filesystem_stdio.wasm';
+                    case 'libref_webgl2.wasm':                     return CDN + 'libref_webgl2.wasm';
+                    case 'libref_soft.wasm':                       return CDN + 'libref_soft.wasm';
+                    case 'cl_dlls/menu_emscripten_wasm32.wasm':    return CS16 + 'cl_dlls/menu_emscripten_wasm32.wasm';
+                    case 'dlls/cs_emscripten_wasm32.wasm':         return CS16 + 'dlls/cs_emscripten_wasm32.wasm';
+                    case 'cl_dlls/client_emscripten_wasm32.wasm':  return CS16 + 'cl_dlls/client_emscripten_wasm32.wasm';
                     default: return p;
                 }
             },
         });
     }
-
-    main().catch(e => {
-        status.textContent = 'Error: ' + e.message;
-        console.error(e);
-    });
-
-    // Kick off lobby (don't start game yet)
-    function main() { return Promise.resolve(); }
 </script>
 </body>
 </html>
