@@ -286,15 +286,27 @@
     let botsEnabled  = false;
     let botsPerTeam  = 3;
 
+    // Buffer for messages that arrive before VirtualNetworkWrapper is ready
+    const sigBuffer = [];
+    let sigHandler  = null;
+
     function connectSignaling() {
         return new Promise((resolve, reject) => {
             sigSocket = new WebSocket(SIGNAL_URL);
             sigSocket.onmessage = e => {
-                const msg = JSON.parse(e.data);
-                if (msg.hostId !== undefined) { myHostId = msg.hostId; resolve(msg.hostId); }
+                let msg;
+                try { msg = JSON.parse(e.data); } catch { return; }
+                if (msg.hostId !== undefined) {
+                    myHostId = msg.hostId;
+                    resolve(msg.hostId);
+                    return;
+                }
+                // Forward to VNW handler, or buffer if not ready yet
+                if (sigHandler) sigHandler(msg);
+                else sigBuffer.push(msg);
             };
             sigSocket.onerror = () => reject(new Error('WebSocket connection failed'));
-            sigSocket.onclose  = e => { if (!myHostId) reject(new Error('Connection closed')); };
+            sigSocket.onclose = () => { if (!myHostId) reject(new Error('Connection closed')); };
         });
     }
 
@@ -355,11 +367,8 @@
         const recv_queue = [];
         const ws = sigSocket;
 
-        ws.addEventListener('message', async e => {
-            let msg;
-            try { msg = JSON.parse(e.data); } catch { return; }
-            if (msg.hostId !== undefined) return;
-
+        // Register handler and drain any buffered messages
+        sigHandler = async msg => {
             if (msg['pc:offer']) {
                 const { description, from } = msg['pc:offer'];
                 const pc = new RTCPeerConnection({ iceServers });
@@ -395,7 +404,9 @@
                 if (pc) await pc.addIceCandidate(candidate).catch(() => {});
                 return;
             }
-        });
+        };
+        // Replay any messages that arrived before we were ready
+        sigBuffer.splice(0).forEach(msg => sigHandler(msg));
 
         function createConnection(targetId, onReady) {
             const addrStr = `101.101.${targetId & 255}.${(targetId >> 8) & 255}`;
