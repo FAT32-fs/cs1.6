@@ -430,6 +430,16 @@
 
     // Deliver a packet received via WebRTC to the game engine
     function deliverToGame(fromId, data) {
+        // Check for JSON control messages (like ready signal)
+        if (data.byteLength < 200) {
+            try {
+                const text = new TextDecoder().decode(data);
+                if (text.startsWith('{')) {
+                    const msg = JSON.parse(text);
+                    if (msg.ready) { hostReadyResolve?.(); return; }
+                }
+            } catch(e) {}
+        }
         const ab = data instanceof ArrayBuffer ? data : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
         const fromAddr = `101.101.${fromId & 255}.${(fromId >> 8) & 255}`;
 
@@ -463,8 +473,18 @@
     }
 
     // Handle all incoming signaling messages (offers/answers/ICE)
+    // Promise that resolves when host signals the map is loaded
+    let hostReadyResolve = null;
+    const hostReadyPromise = new Promise(r => { hostReadyResolve = r; });
+
     sigHandler = async msg => {
         console.log(`[P2P] sigHandler received:`, Object.keys(msg)[0]);
+
+        if (msg['ready']) {
+            console.log('[P2P] Host is ready!');
+            hostReadyResolve();
+            return;
+        }
 
         if (msg['pc:offer']) {
             const { description, from } = msg['pc:offer'];
@@ -751,6 +771,19 @@
                 this.FS.chdir('/rodir');
                 statusEl.style.display = 'none';
 
+                // Notify all connected joiners that the server is ready
+                if (joinTargetId === null) {
+                    // Broadcast ready signal to all connected peers
+                    setTimeout(() => {
+                        channels.forEach((ch, peerId) => {
+                            try { ch.send(JSON.stringify({ ready: true })); } catch(e) {}
+                        });
+                        // Also send via signaling so late joiners get it
+                        sigSocket.send(JSON.stringify({ broadcast: 'ready', from: myHostId }));
+                        console.log('[P2P] Broadcast ready to peers');
+                    }, 3000); // 3s after runtime init to let map actually load
+                }
+
                 // After map loads, add balanced bots
                 if (joinTargetId === null && botsEnabled) {
                     const mod = this;
@@ -775,17 +808,41 @@
             },
         };
 
-        // If joining, establish WebRTC to host before game starts
+        // If joining, connect WebRTC then wait for host to finish loading
         if (joinTargetId !== null) {
             statusEl.textContent = 'Connecting to host...';
             try {
                 await connectToPeer(joinTargetId);
-                console.log('[P2P] WebRTC channel open, starting game');
+                console.log('[P2P] WebRTC channel open');
             } catch(e) {
                 console.error('[P2P] Failed to connect to host:', e);
                 statusEl.textContent = 'Failed to connect to host. Try again.';
                 return;
             }
+
+            // Also handle ready signal arriving via WebRTC DataChannel
+            const origDeliver = deliverToGame;
+            window._p2p_deliverToGame = (fromId, data) => {
+                // Check if it's a JSON ready signal rather than game data
+                try {
+                    const text = new TextDecoder().decode(data);
+                    if (text.startsWith('{')) {
+                        const msg = JSON.parse(text);
+                        if (msg.ready) { hostReadyResolve(); return; }
+                    }
+                } catch(e) {}
+                origDeliver(fromId, data);
+            };
+
+            statusEl.textContent = 'Waiting for host to load...';
+            await Promise.race([
+                hostReadyPromise,
+                new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 120000))
+            ]).catch(e => {
+                // Timeout — try connecting anyway
+                console.warn('[P2P] Host ready timeout, proceeding anyway');
+            });
+            console.log('[P2P] Host ready, starting game');
         }
 
         statusEl.textContent = 'Starting game...';
