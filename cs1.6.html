@@ -28,7 +28,7 @@
             './valve.zip.part3',
             './valve.zip.part4',
             './valve.zip.part5',
-	    './valve.zip.part6',
+			'./valve.zip.part6',
         ];
 
         status.textContent = 'Downloading game chunks...';
@@ -74,7 +74,7 @@
         });
 
         Xash3D({
-            arguments: ['-windowed', '-game', 'cstrike', '+_vgui_menus', '0', '-ref', 'webgl2'],
+            arguments: ['-windowed', '-game', 'cstrike', '+_vgui_menus', '0', '-ref', 'webgl2', '+bot_quota', '5', '+bot_join_after_player', '0', '+bot_difficulty', '1'],
             canvas,
             ctx,
             dynamicLibraries: [
@@ -107,15 +107,10 @@
                         return CDN + 'libref_soft.wasm';
                     case 'cl_dlls/menu_emscripten_wasm32.wasm':
                         return CS16 + 'cl_dlls/menu_emscripten_wasm32.wasm';
+                    case 'dlls/cs_emscripten_wasm32.wasm':
+                        return CS16 + 'dlls/cs_emscripten_wasm32.wasm';
                     case 'cl_dlls/client_emscripten_wasm32.wasm':
                         return CS16 + 'cl_dlls/client_emscripten_wasm32.wasm';
-<<<<<<< HEAD
-                    case 'dlls/yapb.so':
-						return CS16 + 'dlls/yapb_emscripten_wasm32.wasm';
-					case 'dlls/yapb_emscripten_wasm32.wasm':
- 					   return CS16 + 'dlls/yapb_emscripten_wasm32.wasm';
-=======
->>>>>>> parent of 9912e58 (Update game loading script and add new library)
                     default:
                         return p;
                 }
@@ -130,15 +125,3 @@
 </script>
 </body>
 </html>
-<<<<<<< HEAD
-
-
-
-
-
-<<<<<<< HEAD
-
-=======
->>>>>>> parent of 9912e58 (Update game loading script and add new library)
-=======
->>>>>>> parent of c3bd7e1 (Merge branch 'main' of https://github.com/FAT32-fs/cs1.6)
