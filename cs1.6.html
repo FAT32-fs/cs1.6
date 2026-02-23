@@ -601,27 +601,39 @@
     function captureHostSocket(mod) {
         const streams = mod.FS?.streams;
         if (!streams) return null;
+
         for (const stream of streams) {
             if (!stream) continue;
-            // SOCKFS socket nodes have recv_queue and sport
-            const node = stream.node || stream;
-            if (node && Array.isArray(node.recv_queue) && node.sport === 27015) {
-                console.log('[P2P] Found host socket! sport=27015');
-                return node;
-            }
-            // Also check stream.node.sock (older Emscripten layout)
-            if (node?.sock && Array.isArray(node.sock.recv_queue)) {
-                console.log('[P2P] Found host socket (sock)! sport=', node.sock.sport);
-                return node.sock;
+
+            // Try every plausible layout
+            const candidates = [stream, stream.node, stream.node?.sock, stream.sock].filter(Boolean);
+            for (const obj of candidates) {
+                // Log all objects that look socket-like (have ANY of these props)
+                const socketProps = ['recv_queue','sport','stype','sock_ops','server','peers','halfOpen'];
+                const found = socketProps.filter(p => p in obj);
+                if (found.length >= 2) {
+                    console.log('[P2P] Socket candidate:', found, 'sport=', obj.sport, 'recv_queue=', Array.isArray(obj.recv_queue) ? obj.recv_queue.length : typeof obj.recv_queue);
+                    if (Array.isArray(obj.recv_queue)) {
+                        console.log('[P2P] Using this socket, sport=', obj.sport);
+                        return obj;
+                    }
+                }
             }
         }
-        // Fallback: find any socket with recv_queue
+
+        // Last resort: deep scan everything in streams
         for (const stream of streams) {
             if (!stream) continue;
-            const node = stream.node || stream;
-            if (node && Array.isArray(node.recv_queue)) {
-                console.log('[P2P] Found socket with recv_queue, sport=', node.sport);
-                return node;
+            for (const key of Object.keys(stream)) {
+                const val = stream[key];
+                if (val && typeof val === 'object' && Array.isArray(val.recv_queue)) {
+                    console.log(`[P2P] Found recv_queue at stream.${key}, sport=`, val.sport);
+                    return val;
+                }
+                if (val && typeof val === 'object' && val.node && Array.isArray(val.node.recv_queue)) {
+                    console.log(`[P2P] Found recv_queue at stream.${key}.node`);
+                    return val.node;
+                }
             }
         }
         return null;
@@ -747,6 +759,18 @@
                     const mod = this;
                     let attempts = 0;
                     const poller = setInterval(() => {
+                        // On attempt 5, do a full dump of all streams
+                        if (attempts === 5) {
+                            console.log('[P2P] Full stream dump:');
+                            (mod.FS?.streams || []).forEach((s, i) => {
+                                if (!s) return;
+                                try {
+                                    const keys = Object.keys(s);
+                                    console.log(`  stream[${i}]:`, keys.slice(0, 10).join(','));
+                                    if (s.node) console.log(`  stream[${i}].node:`, Object.keys(s.node).slice(0, 15).join(','));
+                                } catch(e) {}
+                            });
+                        }
                         const sock = captureHostSocket(mod);
                         if (sock) {
                             clearInterval(poller);
