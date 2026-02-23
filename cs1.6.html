@@ -78,13 +78,13 @@
             canvas,
             ctx,
             dynamicLibraries: [
-    'filesystem_stdio.wasm',
-    'libref_webgl2.wasm',
-    'cl_dlls/menu_emscripten_wasm32.wasm',
-    'dlls/yapb_emscripten_wasm32.wasm',
-    'cl_dlls/client_emscripten_wasm32.wasm',
-    '/rwdir/filesystem_stdio.so',
-],
+                'filesystem_stdio.wasm',
+                'libref_webgl2.wasm',
+                'cl_dlls/menu_emscripten_wasm32.wasm',
+                'dlls/cs_emscripten_wasm32.wasm',
+                'cl_dlls/client_emscripten_wasm32.wasm',
+                '/rwdir/filesystem_stdio.so',
+            ],
             onRuntimeInitialized: function () {
                 Object.entries(files).forEach(([k, v]) => {
                     const dir = k.split('/').slice(0, -1).join('/');
@@ -109,10 +109,13 @@
                         return CS16 + 'cl_dlls/menu_emscripten_wasm32.wasm';
                     case 'cl_dlls/client_emscripten_wasm32.wasm':
                         return CS16 + 'cl_dlls/client_emscripten_wasm32.wasm';
+<<<<<<< HEAD
                     case 'dlls/yapb.so':
 						return CS16 + 'dlls/yapb_emscripten_wasm32.wasm';
 					case 'dlls/yapb_emscripten_wasm32.wasm':
  					   return CS16 + 'dlls/yapb_emscripten_wasm32.wasm';
+=======
+>>>>>>> parent of 9912e58 (Update game loading script and add new library)
                     default:
                         return p;
                 }
@@ -127,9 +130,12 @@
 </script>
 </body>
 </html>
+<<<<<<< HEAD
 
 
 
 
 
 
+=======
+>>>>>>> parent of 9912e58 (Update game loading script and add new library)
