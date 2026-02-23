@@ -440,7 +440,15 @@
                 }
             } catch(e) {}
         }
-        const ab = data instanceof ArrayBuffer ? data : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+        let ab;
+        if (data instanceof ArrayBuffer) {
+            ab = data;
+        } else if (ArrayBuffer.isView(data)) {
+            ab = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+        } else {
+            console.warn('[P2P] deliverToGame: unexpected data type', typeof data);
+            return;
+        }
         const fromAddr = `101.101.${fromId & 255}.${(fromId >> 8) & 255}`;
 
         if (joinTargetId !== null) {
@@ -454,9 +462,16 @@
                 const q = send_queue.get('recv:' + fromId) || [];
                 q.push(ab);
                 send_queue.set('recv:' + fromId, q);
+                // Retry delivery once FakeWebSocket registers
+                setTimeout(() => {
+                    const fs2 = fakeSocketsByAddr.get(key);
+                    const q2 = send_queue.get('recv:' + fromId) || [];
+                    send_queue.delete('recv:' + fromId);
+                    q2.forEach(p => fs2 ? fs2._receive(p) : null);
+                }, 2000);
             }
         } else {
-            // HOST: push directly into SOCKFS server socket's recv_queue
+            // HOST: push into SOCKFS server socket recv_queue
             if (capturedServerSocket) {
                 capturedServerSocket.recv_queue.push({
                     addr: fromAddr,
@@ -464,7 +479,7 @@
                     data: new Uint8Array(ab)
                 });
             } else {
-                console.warn(`[P2P] host: no capturedServerSocket yet, buffering`);
+                // Buffer until capturedServerSocket is found by poller
                 const q = send_queue.get('recv:' + fromId) || [];
                 q.push(ab);
                 send_queue.set('recv:' + fromId, q);
@@ -730,38 +745,9 @@
                 'cl_dlls/client_emscripten_wasm32.wasm',
                 '/rwdir/filesystem_stdio.so',
             ],
-            // Tell SOCKFS to use our fake URL base — this makes it build
-            // URLs like 'wss://p2p/101.101.X.Y:27015' which FakeWebSocket catches
-            websocket: {
-                url: 'wss://p2p/',
-                subprotocol: 'binary',
-                // Intercept SOCKFS 'connection' event to capture server socket
-                on: (event, callback) => {
-                    if (event === 'connection') {
-                        const origCallback = callback;
-                        // SOCKFS calls this when a socket is created
-                        // We wrap it to also capture the socket reference
-                        moduleConfig._sockfsCallback = (sock) => {
-                            if (!capturedServerSocket && sock) {
-                                capturedServerSocket = sock;
-                                console.log('[P2P] Captured SOCKFS server socket', sock);
-                                // Flush any packets that arrived before capture
-                                const keys = [...send_queue.keys()].filter(k => k.startsWith('recv:'));
-                                keys.forEach(k => {
-                                    const fromId = parseInt(k.split(':')[1]);
-                                    const fromAddr = `101.101.${fromId & 255}.${(fromId >> 8) & 255}`;
-                                    const packets = send_queue.get(k) || [];
-                                    send_queue.delete(k);
-                                    packets.forEach(ab => {
-                                        sock.recv_queue.push({ addr: fromAddr, port: 27015, data: new Uint8Array(ab) });
-                                    });
-                                });
-                            }
-                            origCallback?.(sock);
-                        };
-                    }
-                }
-            },
+            // Tell SOCKFS to use our fake URL base so FakeWebSocket catches
+            // connections to 101.101.x.x addresses
+            websocket: { url: 'wss://p2p/', subprotocol: 'binary' },
             onRuntimeInitialized: function () {
                 Object.entries(files).forEach(([k, v]) => {
                     const dir = k.split('/').slice(0, -1).join('/');
@@ -771,17 +757,65 @@
                 this.FS.chdir('/rodir');
                 statusEl.style.display = 'none';
 
-                // Notify all connected joiners that the server is ready
+                // Host: find the SOCKFS server socket by scanning FS streams,
+                // then broadcast ready to all joiners
                 if (joinTargetId === null) {
-                    // Broadcast ready signal to all connected peers
-                    setTimeout(() => {
-                        channels.forEach((ch, peerId) => {
-                            try { ch.send(JSON.stringify({ ready: true })); } catch(e) {}
+                    const mod = this;
+
+                    function flushPendingPackets(sock) {
+                        const keys = [...send_queue.keys()].filter(k => k.startsWith('recv:'));
+                        keys.forEach(k => {
+                            const fromId = parseInt(k.split(':')[1]);
+                            const fromAddr = `101.101.${fromId & 255}.${(fromId >> 8) & 255}`;
+                            const packets = send_queue.get(k) || [];
+                            send_queue.delete(k);
+                            console.log(`[P2P] Flushing ${packets.length} buffered packets from ${fromAddr}`);
+                            packets.forEach(ab => {
+                                sock.recv_queue.push({ addr: fromAddr, port: 27015, data: new Uint8Array(ab) });
+                            });
                         });
-                        // Also send via signaling so late joiners get it
-                        sigSocket.send(JSON.stringify({ broadcast: 'ready', from: myHostId }));
-                        console.log('[P2P] Broadcast ready to peers');
-                    }, 3000); // 3s after runtime init to let map actually load
+                    }
+
+                    function findServerSocket() {
+                        try {
+                            const streams = mod.FS.streams;
+                            for (let i = 0; i < streams.length; i++) {
+                                const stream = streams[i];
+                                if (!stream || !stream.node) continue;
+                                const sock = stream.node.sock;
+                                if (sock && Array.isArray(sock.recv_queue)) {
+                                    console.log('[P2P] Found SOCKFS socket, sport=', sock.sport, 'saddr=', sock.saddr);
+                                    return sock;
+                                }
+                            }
+                        } catch(e) { console.warn('[P2P] findServerSocket error:', e); }
+                        return null;
+                    }
+
+                    // Poll until the socket appears (map loading creates it)
+                    let attempts = 0;
+                    const socketPoller = setInterval(() => {
+                        const sock = findServerSocket();
+                        if (sock) {
+                            clearInterval(socketPoller);
+                            capturedServerSocket = sock;
+                            console.log('[P2P] Captured server socket on attempt', attempts);
+                            flushPendingPackets(sock);
+
+                            // Now broadcast ready
+                            channels.forEach((ch) => {
+                                try { ch.send(new TextEncoder().encode(JSON.stringify({ ready: true }))); } catch(e) {}
+                            });
+                            sigSocket.send(JSON.stringify({ broadcast: 'ready', from: myHostId }));
+                            console.log('[P2P] Broadcast ready');
+                        }
+                        if (++attempts > 40) { // 20 seconds max
+                            clearInterval(socketPoller);
+                            console.error('[P2P] Could not find server socket after 20s');
+                            // Broadcast ready anyway so joiner doesn't wait forever
+                            sigSocket.send(JSON.stringify({ broadcast: 'ready', from: myHostId }));
+                        }
+                    }, 500);
                 }
 
                 // After map loads, add balanced bots
