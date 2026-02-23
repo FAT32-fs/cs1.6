@@ -106,6 +106,45 @@
         .sel-map b { color: #f90; }
         #map-section.locked { pointer-events: none; opacity: 0.35; }
     </style>
+    <script>
+    // Must run BEFORE raw.js — Emscripten captures window.WebSocket at load time
+    (function() {
+        const _Orig = window.WebSocket;
+        window._xash3dRecvQueues = []; // host will push sockets here
+        window.WebSocket = function(url, protocols) {
+            console.log('[P2P-early] WebSocket called:', url);
+            const m = url && url.match(/(\d+\.\d+\.\d+\.\d+):(\d+)/);
+            if (m && m[1].startsWith('101.101.')) {
+                console.log('[P2P-early] Intercepting P2P WebSocket to', m[1], ':', m[2]);
+                const fake = {
+                    _url: url, _addr: m[1], _port: parseInt(m[2]),
+                    binaryType: 'arraybuffer', readyState: 0,
+                    _listeners: {},
+                    addEventListener(e, fn) { (this._listeners[e] = this._listeners[e]||[]).push(fn); },
+                    removeEventListener(e, fn) { if(this._listeners[e]) this._listeners[e]=this._listeners[e].filter(f=>f!==fn); },
+                    _emit(e, d) { (this._listeners[e]||[]).forEach(fn=>{try{fn(d);}catch(err){}}); },
+                    set onopen(fn)    { this.addEventListener('open',fn);    },
+                    set onmessage(fn) { this.addEventListener('message',fn); },
+                    set onerror(fn)   { this.addEventListener('error',fn);   },
+                    set onclose(fn)   { this.addEventListener('close',fn);   },
+                    send(data) { window._p2pSend && window._p2pSend(this._addr, this._port, data); },
+                    close() { this.readyState=3; this._emit('close',{type:'close',code:1000,wasClean:true}); },
+                };
+                // Register this fake socket so P2P layer can deliver to it
+                window._p2pRegisterSocket && window._p2pRegisterSocket(fake);
+                // Store for later registration once P2P is set up
+                (window._pendingFakeSockets = window._pendingFakeSockets || []).push(fake);
+                // Open asynchronously
+                setTimeout(() => { fake.readyState=1; fake._emit('open',{type:'open'}); }, 0);
+                return fake;
+            }
+            return new _Orig(url, protocols);
+        };
+        Object.assign(window.WebSocket, {CONNECTING:0,OPEN:1,CLOSING:2,CLOSED:3});
+        window.WebSocket.prototype = _Orig.prototype;
+        console.log('[P2P-early] WebSocket hook installed');
+    })();
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/xash3d-fwgs@latest/dist/raw.js"></script>
 </head>
 <body>
@@ -487,7 +526,7 @@
             // JOINER: deliver to FakeWebSocket SOCKFS created for this address
             const fs = fakeSockets.get(`${fromAddr}:27015`);
             if (fs) {
-                fs._recv(ab);
+                (fs._recvP2P || fs._recv).call(fs, ab);
             } else {
                 console.warn(`[P2P] joiner: no FakeWebSocket for ${fromAddr}:27015, queuing`);
                 const q = sendQueue.get('recv:' + fromId) || [];
@@ -521,78 +560,40 @@
         }
     }
 
-    // ── FakeWebSocket (joiner side) ────────────────────────────────────────────
-    // SOCKFS calls: new WebSocket('wss://101.101.X.Y:PORT/...', 'binary')
-    // We intercept it and route through WebRTC DataChannel instead.
-    const _OrigWS = window.WebSocket;
+    // ── Wire early WebSocket hook into P2P layer ─────────────────────────────
+    // The early hook (in <head>) captured window.WebSocket before raw.js.
+    // Now we wire up its callbacks to our P2P send/receive logic.
 
     function installWSHook() {
-        window.WebSocket = function(url, protocols) {
-            console.log('[P2P] WebSocket() called with url:', url);
-            // Only intercept P2P addresses
-            const m = url.match(/(\d+\.\d+\.\d+\.\d+):(\d+)/);
-            if (m && m[1].startsWith('101.101.')) {
-                return new FakeWebSocket(url, m[1], parseInt(m[2]));
-            }
-            return new _OrigWS(url, protocols);
-        };
-        Object.assign(window.WebSocket, { CONNECTING:0, OPEN:1, CLOSING:2, CLOSED:3 });
-        window.WebSocket.prototype = _OrigWS.prototype;
-        console.log('[P2P] WebSocket hook installed');
-    }
-
-    class FakeWebSocket {
-        constructor(url, addr, port) {
-            this.url        = url;
-            this.binaryType = 'arraybuffer';
-            this.readyState = 0;
-            this._listeners = {};
-            this._addr      = addr;
-            this._port      = port;
-            this._key       = `${addr}:${port}`;
-
+        // Send: called by FakeWebSocket.send() when engine sends a UDP packet
+        window._p2pSend = (addr, port, data) => {
             const [,, b3, b4] = addr.split('.').map(Number);
-            this._peerId    = b3 | (b4 << 8);
-
-            console.log(`[P2P] FakeWebSocket for ${this._key} peerId=${this._peerId}`);
-            fakeSockets.set(this._key, this);
-
-            // Go "open" immediately — channel should already exist from preConnect
-            setTimeout(() => {
-                this.readyState = 1;
-                this._emit('open', { type: 'open' });
-                // Flush any packets that arrived before this socket existed
-                const q = sendQueue.get('recv:' + this._peerId) || [];
-                sendQueue.delete('recv:' + this._peerId);
-                q.forEach(ab => this._recv(ab));
-            }, 0);
-        }
-
-        send(data) {
+            const peerId = b3 | (b4 << 8);
             const ab = data instanceof ArrayBuffer ? data
                      : (ArrayBuffer.isView(data) ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
                      : data);
-            sendPacket(this._peerId, ab);
-        }
+            sendPacket(peerId, ab);
+        };
 
-        _recv(ab) {
-            this._emit('message', { type: 'message', data: ab });
-        }
+        // Register: called when engine creates a new FakeWebSocket
+        window._p2pRegisterSocket = (fake) => {
+            const [,, b3, b4] = fake._addr.split('.').map(Number);
+            const peerId = b3 | (b4 << 8);
+            const key = `${fake._addr}:${fake._port}`;
+            console.log(`[P2P] Registered FakeSocket for ${key} peerId=${peerId}`);
+            fakeSockets.set(key, fake);
+            // Also attach _recv so deliverPacket can push data into it
+            fake._recvP2P = (ab) => fake._emit('message', { type: 'message', data: ab });
+            // Flush buffered received packets
+            const q = sendQueue.get('recv:' + peerId) || [];
+            sendQueue.delete('recv:' + peerId);
+            q.forEach(ab => fake._recvP2P(ab));
+        };
 
-        close() {
-            this.readyState = 3;
-            fakeSockets.delete(this._key);
-            this._emit('close', { type: 'close', code: 1000, wasClean: true });
-        }
-
-        addEventListener(evt, fn)    { (this._listeners[evt] = this._listeners[evt] || []).push(fn); }
-        removeEventListener(evt, fn) { if (this._listeners[evt]) this._listeners[evt] = this._listeners[evt].filter(f => f !== fn); }
-        _emit(evt, e)                { (this._listeners[evt] || []).forEach(fn => { try { fn(e); } catch(err) {} }); }
-
-        set onopen(fn)    { this.addEventListener('open',    fn); }
-        set onmessage(fn) { this.addEventListener('message', fn); }
-        set onerror(fn)   { this.addEventListener('error',   fn); }
-        set onclose(fn)   { this.addEventListener('close',   fn); }
+        // Register any sockets that were created before this code ran
+        (window._pendingFakeSockets || []).forEach(fake => window._p2pRegisterSocket(fake));
+        window._pendingFakeSockets = [];
+        console.log('[P2P] P2P send/receive wired to early hook');
     }
 
     // ── Host socket capture ────────────────────────────────────────────────────
@@ -712,7 +713,7 @@
             }
         }
 
-        // Install for both sides so we can see ALL WebSocket calls
+        // Wire P2P layer into the early WebSocket hook
         installWSHook();
 
         const moduleConfig = {
@@ -725,7 +726,20 @@
                 'cl_dlls/client_emscripten_wasm32.wasm',
                 '/rwdir/filesystem_stdio.so',
             ],
-            websocket: { url: 'wss://', subprotocol: 'binary' },
+            websocket: {
+                url: 'wss://',
+                subprotocol: 'binary',
+                on: (event, sock) => {
+                    if (event === 'connection' && joinTargetId === null) {
+                        console.log('[P2P] websocket.on connection sport=', sock?.sport, 'has recv_queue=', Array.isArray(sock?.recv_queue));
+                        if (sock && Array.isArray(sock.recv_queue) && !hostSocket) {
+                            hostSocket = sock;
+                            console.log('[P2P] hostSocket captured via websocket.on!');
+                            flushHostQueue();
+                        }
+                    }
+                }
+            },
             onRuntimeInitialized: function () {
                 Object.entries(files).forEach(([k, v]) => {
                     const dir = k.split('/').slice(0, -1).join('/');
@@ -755,53 +769,32 @@
                 } catch(e) { console.log('[P2P] FS.streams error:', e.message); }
 
                 if (joinTargetId === null) {
-                    // HOST: scan for SOCKFS socket, then broadcast ready
                     const mod = this;
-                    let attempts = 0;
-                    const poller = setInterval(() => {
-                        // On attempt 5, do a full dump of all streams
-                        if (attempts === 5) {
-                            console.log('[P2P] Full stream dump:');
-                            (mod.FS?.streams || []).forEach((s, i) => {
-                                if (!s) return;
-                                try {
-                                    const keys = Object.keys(s);
-                                    console.log(`  stream[${i}]:`, keys.slice(0, 10).join(','));
-                                    if (s.node) console.log(`  stream[${i}].node:`, Object.keys(s.node).slice(0, 15).join(','));
-                                } catch(e) {}
-                            });
+                    // Give the engine 6s to start the server (map load + NET_Init)
+                    // then broadcast ready regardless of whether we found the socket
+                    setTimeout(() => {
+                        // Try socket capture one more time as fallback
+                        if (!hostSocket) {
+                            const sock = captureHostSocket(mod);
+                            if (sock) { hostSocket = sock; flushHostQueue(); }
+                            console.log('[P2P] fallback socket capture:', hostSocket ? 'found' : 'not found');
                         }
-                        const sock = captureHostSocket(mod);
-                        if (sock) {
-                            clearInterval(poller);
-                            hostSocket = sock;
-                            console.log('[P2P] hostSocket captured on attempt', attempts);
-                            flushHostQueue();
+                        channels.forEach(ch => {
+                            try { ch.send(new TextEncoder().encode(JSON.stringify({ ready: true }))); } catch(e) {}
+                        });
+                        sigSocket.send(JSON.stringify({ broadcast: 'ready', from: myHostId }));
+                        console.log('[P2P] broadcast ready sent, hostSocket:', !!hostSocket);
 
-                            // Broadcast ready to all connected joiners
-                            channels.forEach(ch => {
-                                try { ch.send(new TextEncoder().encode(JSON.stringify({ ready: true }))); } catch(e) {}
-                            });
-                            sigSocket.send(JSON.stringify({ broadcast: 'ready', from: myHostId }));
-                            console.log('[P2P] broadcast ready sent');
-
-                            // Add bots
-                            if (botsEnabled) {
-                                const cmds = [`bot_quota ${botsPerTeam * 2}`, 'bot_difficulty 1',
-                                    'bot_join_after_player 0', 'bot_auto_vacate 0', 'bot_join_team ct'];
-                                for (let i = 0; i < botsPerTeam; i++) cmds.push('addbot');
-                                cmds.push('bot_join_team t');
-                                for (let i = 0; i < botsPerTeam; i++) cmds.push('addbot');
-                                cmds.push('bot_join_team any');
-                                cmds.forEach(cmd => mod.executeString?.(cmd));
-                            }
+                        if (botsEnabled) {
+                            const cmds = [`bot_quota ${botsPerTeam * 2}`, 'bot_difficulty 1',
+                                'bot_join_after_player 0', 'bot_auto_vacate 0', 'bot_join_team ct'];
+                            for (let i = 0; i < botsPerTeam; i++) cmds.push('addbot');
+                            cmds.push('bot_join_team t');
+                            for (let i = 0; i < botsPerTeam; i++) cmds.push('addbot');
+                            cmds.push('bot_join_team any');
+                            cmds.forEach(cmd => mod.executeString?.(cmd));
                         }
-                        if (++attempts > 60) { // 30s max
-                            clearInterval(poller);
-                            console.error('[P2P] could not find hostSocket after 30s');
-                            sigSocket.send(JSON.stringify({ broadcast: 'ready', from: myHostId }));
-                        }
-                    }, 500);
+                    }, 6000);
                 }
             },
             locateFile: (p) => {
