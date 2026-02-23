@@ -360,154 +360,28 @@
     });
 
     // ─── P2P Networking ──────────────────────────────────────────────────────────
-    //
-    // Strategy: The CDN xash3d build uses Emscripten SOCKFS which creates real
-    // WebSockets for UDP sockets. We intercept window.WebSocket before Xash3D
-    // starts so any WebSocket to a 101.101.x.x address is handled by our
-    // FakeWebSocket class, which routes through WebRTC DataChannels instead.
-    //
-    // For the HOST receiving incoming packets: SOCKFS never creates a WebSocket
-    // for the server socket (it just recvfrom()s from a queue). We grab the
-    // socket object via Module.websocket 'connection' callback and push
-    // received WebRTC data directly into its recv_queue.
-    // ────────────────────────────────────────────────────────────────────────────
+    // Uses module.net hooks built into xash3d-fwgs (same engine as turch.in).
+    // Set directly on moduleConfig before Xash3D() — Emscripten merges config
+    // into Module, so Module.net is available the moment the engine starts.
+    // ─────────────────────────────────────────────────────────────────────────
 
-    const peers      = new Map();   // peerKey -> RTCPeerConnection
+    const peers      = new Map();   // peerKey  -> RTCPeerConnection
     const channels   = new Map();   // targetId -> RTCDataChannel
-    const send_queue = new Map();   // targetId -> queued ArrayBuffers
-    const fakeSocketsByAddr = new Map(); // 'ip:port' -> FakeWebSocket (joiner side)
-    let   capturedServerSocket = null;  // SOCKFS server socket (host side)
+    const send_queue = new Map();   // targetId -> ArrayBuffer[]
+    const recv_queue = [];          // { addr, port, data } — read by recvfrom
 
-    function setupWebRTC(targetId, isInitiator) {
-        const peerKey = `${myHostId}:${targetId}`;
-        if (peers.has(peerKey)) return peers.get(peerKey);
-
-        console.log(`[P2P] setupWebRTC targetId=${targetId} initiator=${isInitiator}`);
-        const pc = new RTCPeerConnection({ iceServers });
-        peers.set(peerKey, pc);
-
-        if (isInitiator) {
-            const ch = pc.createDataChannel('udp', { maxRetransmits: 0, ordered: false });
-            ch.binaryType = 'arraybuffer';
-            ch.addEventListener('open', () => {
-                console.log(`[P2P] DataChannel OPEN (initiator) with ${targetId}`);
-                channels.set(targetId, ch);
-                // flush queued packets
-                const q = send_queue.get(targetId) || [];
-                while (q.length) ch.send(q.shift());
-                send_queue.delete(targetId);
-            });
-            ch.addEventListener('message', e => deliverToGame(targetId, e.data));
-            ch.addEventListener('close', () => { channels.delete(targetId); });
-        } else {
-            pc.addEventListener('datachannel', ({ channel }) => {
-                channel.binaryType = 'arraybuffer';
-                channel.addEventListener('open', () => {
-                    console.log(`[P2P] DataChannel OPEN (receiver) with ${targetId}`);
-                    channels.set(targetId, channel);
-                    const q = send_queue.get(targetId) || [];
-                    while (q.length) channel.send(q.shift());
-                    send_queue.delete(targetId);
-                });
-                channel.addEventListener('message', e => deliverToGame(targetId, e.data));
-                channel.addEventListener('close', () => { channels.delete(targetId); });
-            });
-        }
-
-        pc.addEventListener('icecandidate', ({ candidate }) => {
-            if (candidate) sigSocket.send(JSON.stringify({
-                'pc:ice-candidate': { candidate, from: myHostId, to: targetId }
-            }));
-        });
-        pc.addEventListener('connectionstatechange', () => {
-            console.log(`[P2P] connectionState with ${targetId}: ${pc.connectionState}`);
-            if (pc.connectionState === 'failed') pc.restartIce();
-            if (['closed','disconnected'].includes(pc.connectionState)) peers.delete(peerKey);
-        });
-
-        return pc;
-    }
-
-    // Deliver a packet received via WebRTC to the game engine
-    function deliverToGame(fromId, data) {
-        // Check for JSON control messages (like ready signal)
-        if (data.byteLength < 200) {
-            try {
-                const text = new TextDecoder().decode(data);
-                if (text.startsWith('{')) {
-                    const msg = JSON.parse(text);
-                    if (msg.ready) { hostReadyResolve?.(); return; }
-                }
-            } catch(e) {}
-        }
-        let ab;
-        if (data instanceof ArrayBuffer) {
-            ab = data;
-        } else if (ArrayBuffer.isView(data)) {
-            ab = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-        } else {
-            console.warn('[P2P] deliverToGame: unexpected data type', typeof data);
-            return;
-        }
-        const fromAddr = `101.101.${fromId & 255}.${(fromId >> 8) & 255}`;
-
-        if (joinTargetId !== null) {
-            // JOINER: deliver via FakeWebSocket that SOCKFS created for this addr
-            const key = `${fromAddr}:27015`;
-            const fakeSock = fakeSocketsByAddr.get(key);
-            if (fakeSock) {
-                fakeSock._receive(ab);
-            } else {
-                console.warn(`[P2P] joiner: no FakeWebSocket for ${key}, buffering`);
-                const q = send_queue.get('recv:' + fromId) || [];
-                q.push(ab);
-                send_queue.set('recv:' + fromId, q);
-                // Retry delivery once FakeWebSocket registers
-                setTimeout(() => {
-                    const fs2 = fakeSocketsByAddr.get(key);
-                    const q2 = send_queue.get('recv:' + fromId) || [];
-                    send_queue.delete('recv:' + fromId);
-                    q2.forEach(p => fs2 ? fs2._receive(p) : null);
-                }, 2000);
-            }
-        } else {
-            // HOST: push into SOCKFS server socket recv_queue
-            if (capturedServerSocket) {
-                capturedServerSocket.recv_queue.push({
-                    addr: fromAddr,
-                    port: 27015,
-                    data: new Uint8Array(ab)
-                });
-            } else {
-                // Buffer until capturedServerSocket is found by poller
-                const q = send_queue.get('recv:' + fromId) || [];
-                q.push(ab);
-                send_queue.set('recv:' + fromId, q);
-            }
-        }
-    }
-
-    // Handle all incoming signaling messages (offers/answers/ICE)
-    // Promise that resolves when host signals the map is loaded
-    let hostReadyResolve = null;
-    const hostReadyPromise = new Promise(r => { hostReadyResolve = r; });
-
+    // Handle all incoming signaling messages
     sigHandler = async msg => {
-        console.log(`[P2P] sigHandler received:`, Object.keys(msg)[0]);
+        console.log('[P2P] sigHandler:', Object.keys(msg)[0]);
 
         if (msg['ready']) {
             console.log('[P2P] Host is ready!');
-            hostReadyResolve();
+            hostReadyResolve?.();
             return;
         }
-
         if (msg['pc:offer']) {
             const { description, from } = msg['pc:offer'];
-            const pc = setupWebRTC(from, false);
-            await pc.setRemoteDescription(description);
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            sigSocket.send(JSON.stringify({ 'pc:answer': { description: pc.localDescription, from: myHostId, to: from } }));
+            await handleOffer(from, description);
             return;
         }
         if (msg['pc:answer']) {
@@ -523,153 +397,155 @@
             return;
         }
     };
-    // Drain buffered messages
     sigBuffer.splice(0).forEach(msg => sigHandler(msg));
 
-    // Initiate WebRTC connection to a peer (joiner → host)
+    // HOST: answer an incoming offer
+    async function handleOffer(from, description) {
+        const peerKey = `${myHostId}:${from}`;
+        const pc = new RTCPeerConnection({ iceServers });
+        peers.set(peerKey, pc);
+
+        pc.addEventListener('datachannel', ({ channel }) => {
+            channel.binaryType = 'arraybuffer';
+            channel.addEventListener('open', () => {
+                console.log(`[P2P] DataChannel OPEN (host) from ${from}`);
+                channels.set(from, channel);
+                flushQueue(from);
+            });
+            channel.addEventListener('message', ({ data }) => {
+                const fromAddr = `101.101.${from & 255}.${(from >> 8) & 255}`;
+                recv_queue.push({ addr: fromAddr, port: 27015, data });
+            });
+            channel.addEventListener('close', () => channels.delete(from));
+        });
+        pc.addEventListener('icecandidate', ({ candidate }) => {
+            if (candidate) sigSocket.send(JSON.stringify({ 'pc:ice-candidate': { candidate, from: myHostId, to: from } }));
+        });
+        pc.addEventListener('connectionstatechange', () => {
+            if (['closed','disconnected'].includes(pc.connectionState)) peers.delete(peerKey);
+        });
+
+        await pc.setRemoteDescription(description);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        sigSocket.send(JSON.stringify({ 'pc:answer': { description: pc.localDescription, from: myHostId, to: from } }));
+    }
+
+    // JOINER: initiate connection to host
     function connectToPeer(targetId) {
         return new Promise((resolve, reject) => {
             if (channels.has(targetId)) { resolve(); return; }
-            const pc = setupWebRTC(targetId, true);
+            const peerKey = `${myHostId}:${targetId}`;
+            const pc = new RTCPeerConnection({ iceServers });
+            peers.set(peerKey, pc);
+
+            const channel = pc.createDataChannel('udp', { maxRetransmits: 0, ordered: false });
+            channel.binaryType = 'arraybuffer';
+            channel.addEventListener('open', () => {
+                console.log(`[P2P] DataChannel OPEN (joiner) with ${targetId}`);
+                channels.set(targetId, channel);
+                flushQueue(targetId);
+                resolve();
+            });
+            channel.addEventListener('message', ({ data }) => {
+                const fromAddr = `101.101.${targetId & 255}.${(targetId >> 8) & 255}`;
+                recv_queue.push({ addr: fromAddr, port: 27015, data });
+            });
+            channel.addEventListener('close', () => channels.delete(targetId));
+            pc.addEventListener('icecandidate', ({ candidate }) => {
+                if (candidate) sigSocket.send(JSON.stringify({ 'pc:ice-candidate': { candidate, from: myHostId, to: targetId } }));
+            });
+            pc.addEventListener('connectionstatechange', () => {
+                console.log(`[P2P] connectionState with ${targetId}: ${pc.connectionState}`);
+                if (pc.connectionState === 'failed') pc.restartIce();
+                if (['closed','disconnected'].includes(pc.connectionState)) peers.delete(peerKey);
+            });
+
             pc.createOffer()
               .then(d => pc.setLocalDescription(d))
               .then(() => sigSocket.send(JSON.stringify({
                   'pc:offer': { description: pc.currentLocalDescription ?? pc.localDescription, from: myHostId, to: targetId }
               })));
-            // Wait for channel to open
-            const check = setInterval(() => {
-                if (channels.has(targetId)) { clearInterval(check); resolve(); }
-            }, 100);
-            setTimeout(() => { clearInterval(check); reject(new Error('WebRTC timeout')); }, 15000);
+
+            setTimeout(() => reject(new Error('WebRTC connect timeout')), 15000);
         });
     }
 
-    // ─── FakeWebSocket ────────────────────────────────────────────────────────
-    // Intercepts SOCKFS WebSocket connections to 101.101.x.x addresses and
-    // routes them through our WebRTC DataChannels instead.
-    const OrigWebSocket = window.WebSocket;
-
-    class FakeWebSocket {
-        constructor(url, protocols) {
-            this.binaryType = 'arraybuffer';
-            this.readyState = 0; // CONNECTING
-            this._callbacks = {};
-            this._buffer = [];
-
-            // Parse target address from URL
-            // SOCKFS builds URL as: baseUrl + hostname + ':' + port + '/' + rest
-            // With Module.websocket.url='wss://p2p/', and target 101.101.X.Y:27015:
-            // → 'wss://p2p/101.101.X.Y:27015/'
-            // SOCKFS builds: wss://101.101.X.Y:PORT/path
-            const m = url.match(/101[._]101[._](\d+)[._](\d+)[^\d](\d+)/);
-            if (m) {
-                this._addr = `101.101.${m[1]}.${m[2]}`;
-                this._port = parseInt(m[3]);
-                this._key  = `${this._addr}:${this._port}`;
-                this._targetId = (parseInt(m[1])) | (parseInt(m[2]) << 8);
-                fakeSocketsByAddr.set(this._key, this);
-                console.log(`[P2P] FakeWebSocket created for ${this._key} targetId=${this._targetId} url=${url}`);
-
-                // Flush any packets that arrived before this socket was created
-                const pending = send_queue.get('recv:' + this._targetId) || [];
-                send_queue.delete('recv:' + this._targetId);
-
-                // Go open immediately — channel should already be up (preConnect)
-                // or we create the connection now
-                setTimeout(() => {
-                    this.readyState = 1;
-                    this._emit('open', { type: 'open' });
-                    // Deliver any buffered received packets
-                    pending.forEach(ab => this._receive(ab));
-                }, 0);
-            } else {
-                console.warn(`[P2P] FakeWebSocket: no 101.101 match in url=${url}`);
-                // Not a P2P address — shouldn't happen, but just open/close cleanly
-                setTimeout(() => {
-                    this.readyState = 1;
-                    this._emit('open', { type: 'open' });
-                }, 0);
-            }
-        }
-
-        send(data) {
-            if (!this._targetId) return;
-            const ab = data instanceof ArrayBuffer ? data
-                     : (ArrayBuffer.isView(data) ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
-                     : data);
-            const ch = channels.get(this._targetId);
-            if (ch && ch.readyState === 'open') {
-                ch.send(ab);
-            } else {
-                const q = send_queue.get(this._targetId) || [];
-                q.push(ab);
-                send_queue.set(this._targetId, q);
-                // Trigger connection if not yet started
-                if (!peers.has(`${myHostId}:${this._targetId}`)) {
-                    setupWebRTC(this._targetId, true);
-                    const pc = peers.get(`${myHostId}:${this._targetId}`);
-                    pc.createOffer()
-                      .then(d => pc.setLocalDescription(d))
-                      .then(() => sigSocket.send(JSON.stringify({
-                          'pc:offer': { description: pc.currentLocalDescription ?? pc.localDescription, from: myHostId, to: this._targetId }
-                      })));
-                }
-            }
-        }
-
-        _receive(ab) {
-            this._emit('message', { data: ab, type: 'message' });
-        }
-
-        close() {
-            this.readyState = 3;
-            if (this._key) fakeSocketsByAddr.delete(this._key);
-            this._emit('close', { type: 'close', code: 1000, wasClean: true });
-        }
-
-        addEventListener(event, fn) {
-            (this._callbacks[event] = this._callbacks[event] || []).push(fn);
-        }
-        removeEventListener(event, fn) {
-            if (this._callbacks[event])
-                this._callbacks[event] = this._callbacks[event].filter(f => f !== fn);
-        }
-        _emit(event, data) {
-            (this._callbacks[event] || []).forEach(fn => {
-                try { fn(data); } catch(e) { console.error('[P2P] FakeWebSocket listener error:', e); }
-            });
-        }
-
-        set onopen(fn)    { this.addEventListener('open', fn);    this._onopen = fn; }
-        set onmessage(fn) { this.addEventListener('message', fn); this._onmessage = fn; }
-        set onerror(fn)   { this.addEventListener('error', fn);   this._onerror = fn; }
-        set onclose(fn)   { this.addEventListener('close', fn);   this._onclose = fn; }
-        get onopen()      { return this._onopen; }
-        get onmessage()   { return this._onmessage; }
-        get onerror()     { return this._onerror; }
-        get onclose()     { return this._onclose; }
-        get CONNECTING()  { return 0; }
-        get OPEN()        { return 1; }
-        get CLOSING()     { return 2; }
-        get CLOSED()      { return 3; }
+    function flushQueue(targetId) {
+        const q = send_queue.get(targetId) || [];
+        send_queue.delete(targetId);
+        const ch = channels.get(targetId);
+        if (ch) q.forEach(ab => ch.send(ab));
     }
 
-    // Install the FakeWebSocket interceptor
-    // Must happen before Xash3D() is called
-    function installWebSocketHook() {
-        window.WebSocket = function(url, protocols) {
-            if (url.includes('101.101.') || url.includes('p2p')) {
-                return new FakeWebSocket(url, protocols);
-            }
-            return new OrigWebSocket(url, protocols);
+    // Promise that resolves when host signals map is loaded
+    let hostReadyResolve = null;
+    const hostReadyPromise = new Promise(r => { hostReadyResolve = r; });
+
+    // Build module.net — set directly on moduleConfig before Xash3D()
+    // xash3d-fwgs checks for Module.net and uses it instead of real UDP sockets
+    function buildModuleNet() {
+        return {
+            getHostId: () => myHostId,
+
+            recvfrom: (fd, buf, len, flags, addrPtr, addrLenPtr) => {
+                const pkt = recv_queue.shift();
+                if (!pkt) {
+                    // EAGAIN — no data yet, try again next frame
+                    return -11; // EAGAIN
+                }
+                // Write source address into sockaddr struct
+                if (addrPtr) {
+                    const mod = window._xash3dModule;
+                    if (mod && mod.writeSockaddr) {
+                        mod.writeSockaddr(addrPtr, 2, pkt.addr, pkt.port, addrLenPtr);
+                    }
+                }
+                // Copy packet data into engine buffer
+                const mod = window._xash3dModule;
+                if (mod) {
+                    const bytes = pkt.data instanceof ArrayBuffer
+                        ? new Uint8Array(pkt.data)
+                        : (ArrayBuffer.isView(pkt.data) ? new Uint8Array(pkt.data.buffer, pkt.data.byteOffset, pkt.data.byteLength) : new Uint8Array(pkt.data));
+                    mod.HEAPU8.set(bytes.subarray(0, Math.min(bytes.length, len)), buf);
+                    return bytes.length;
+                }
+                return -1;
+            },
+
+            sendto: (fd, buf, len, flags, addrPtr, addrLen) => {
+                const mod = window._xash3dModule;
+                if (!mod) return len;
+
+                let dstAddr, dstPort;
+                try {
+                    const dst = mod.readSockaddr(addrPtr, addrLen);
+                    dstAddr = dst.addr;
+                    dstPort = dst.port;
+                } catch(e) { return len; }
+
+                if (dstAddr === '255.255.255.255') return len; // broadcast, ignore
+
+                const [,, b3, b4] = dstAddr.split('.').map(Number);
+                const targetId = b3 | (b4 << 8);
+                const data = mod.HEAPU8.slice(buf, buf + len);
+
+                const ch = channels.get(targetId);
+                if (ch && ch.readyState === 'open') {
+                    ch.send(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
+                } else {
+                    const q = send_queue.get(targetId) || [];
+                    q.push(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
+                    send_queue.set(targetId, q);
+                    // Auto-connect if we don't have a channel yet (host receiving new joiner)
+                    if (!peers.has(`${myHostId}:${targetId}`)) {
+                        console.log(`[P2P] sendto: auto-connect to ${targetId}`);
+                        connectToPeer(targetId).catch(e => console.error('[P2P] auto-connect failed:', e));
+                    }
+                }
+                return len;
+            },
         };
-        // Copy static properties so Emscripten's checks pass
-        window.WebSocket.prototype = OrigWebSocket.prototype;
-        window.WebSocket.CONNECTING = 0;
-        window.WebSocket.OPEN = 1;
-        window.WebSocket.CLOSING = 2;
-        window.WebSocket.CLOSED = 3;
-        console.log('[P2P] WebSocket hook installed');
     }
 
         // ─── Game boot ───────────────────────────────────────────────────────────
@@ -733,9 +609,6 @@
             }
         }
 
-        // Install WebSocket hook before Xash3D starts
-        installWebSocketHook();
-
         const moduleConfig = {
             arguments: gameArgs,
             canvas, ctx,
@@ -746,12 +619,9 @@
                 'cl_dlls/client_emscripten_wasm32.wasm',
                 '/rwdir/filesystem_stdio.so',
             ],
-            // Tell SOCKFS to use our fake URL base so FakeWebSocket catches
-            // connections to 101.101.x.x addresses
-            // SOCKFS only appends host:port when url is exactly 'wss://'
-            // It builds: 'wss://' + '101.101.X.Y' + ':' + port + '/' + path
-            // FakeWebSocket then intercepts based on the 101.101. pattern
-            websocket: { url: 'wss://', subprotocol: 'binary' },
+            // Attach net hooks — xash3d-fwgs checks Module.net and uses it
+            // instead of real UDP sockets. Must be set before Xash3D() call.
+            net: buildModuleNet(),
             onRuntimeInitialized: function () {
                 Object.entries(files).forEach(([k, v]) => {
                     const dir = k.split('/').slice(0, -1).join('/');
@@ -761,73 +631,34 @@
                 this.FS.chdir('/rodir');
                 statusEl.style.display = 'none';
 
-                // Host: find the SOCKFS server socket by scanning FS streams,
-                // then broadcast ready to all joiners
+                // Store module reference for net hooks
+                window._xash3dModule = this;
+
                 if (joinTargetId === null) {
+                    // HOST: broadcast ready after map loads (give engine 5s to start server)
                     const mod = this;
-
-                    function flushPendingPackets(sock) {
-                        const keys = [...send_queue.keys()].filter(k => k.startsWith('recv:'));
-                        keys.forEach(k => {
-                            const fromId = parseInt(k.split(':')[1]);
-                            const fromAddr = `101.101.${fromId & 255}.${(fromId >> 8) & 255}`;
-                            const packets = send_queue.get(k) || [];
-                            send_queue.delete(k);
-                            console.log(`[P2P] Flushing ${packets.length} buffered packets from ${fromAddr}`);
-                            packets.forEach(ab => {
-                                sock.recv_queue.push({ addr: fromAddr, port: 27015, data: new Uint8Array(ab) });
-                            });
-                        });
-                    }
-
-                    function findServerSocket() {
-                        try {
-                            const streams = mod.FS.streams;
-                            for (let i = 0; i < streams.length; i++) {
-                                const stream = streams[i];
-                                if (!stream || !stream.node) continue;
-                                const sock = stream.node.sock;
-                                if (sock && Array.isArray(sock.recv_queue)) {
-                                    console.log('[P2P] Found SOCKFS socket, sport=', sock.sport, 'saddr=', sock.saddr);
-                                    return sock;
-                                }
-                            }
-                        } catch(e) { console.warn('[P2P] findServerSocket error:', e); }
-                        return null;
-                    }
-
-                    // Poll until the socket appears (map loading creates it)
-                    let attempts = 0;
-                    const socketPoller = setInterval(() => {
-                        const sock = findServerSocket();
-                        if (sock) {
-                            clearInterval(socketPoller);
-                            capturedServerSocket = sock;
-                            console.log('[P2P] Captured server socket on attempt', attempts);
-                            flushPendingPackets(sock);
-
-                            // Now broadcast ready
-                            channels.forEach((ch) => {
-                                try { ch.send(new TextEncoder().encode(JSON.stringify({ ready: true }))); } catch(e) {}
-                            });
-                            sigSocket.send(JSON.stringify({ broadcast: 'ready', from: myHostId }));
-                            console.log('[P2P] Broadcast ready');
-                        }
-                        if (++attempts > 40) { // 20 seconds max
-                            clearInterval(socketPoller);
-                            console.error('[P2P] Could not find server socket after 20s');
-                            // Broadcast ready anyway so joiner doesn't wait forever
-                            sigSocket.send(JSON.stringify({ broadcast: 'ready', from: myHostId }));
-                        }
-                    }, 500);
-                }
-
-                // After map loads, add balanced bots
-                if (joinTargetId === null && botsEnabled) {
-                    const mod = this;
-                    // Delay to let map finish loading
                     setTimeout(() => {
-                        getBotCommands(botsPerTeam).forEach(cmd => mod.executeString?.(cmd));
+                        console.log('[P2P] Broadcasting ready to joiners');
+                        channels.forEach(ch => {
+                            try { ch.send(new TextEncoder().encode(JSON.stringify({ ready: true }))); } catch(e) {}
+                        });
+                        sigSocket.send(JSON.stringify({ broadcast: 'ready', from: myHostId }));
+
+                        // Add bots
+                        if (botsEnabled) {
+                            const cmds = [
+                                `bot_quota ${botsPerTeam * 2}`,
+                                'bot_difficulty 1',
+                                'bot_join_after_player 0',
+                                'bot_auto_vacate 0',
+                                'bot_join_team ct',
+                            ];
+                            for (let i = 0; i < botsPerTeam; i++) cmds.push('addbot');
+                            cmds.push('bot_join_team t');
+                            for (let i = 0; i < botsPerTeam; i++) cmds.push('addbot');
+                            cmds.push('bot_join_team any');
+                            cmds.forEach(cmd => mod.executeString?.(cmd));
+                        }
                     }, 5000);
                 }
             },
@@ -846,40 +677,22 @@
             },
         };
 
-        // If joining, connect WebRTC then wait for host to finish loading
+        // If joining: open WebRTC channel then wait for host ready signal
         if (joinTargetId !== null) {
             statusEl.textContent = 'Connecting to host...';
             try {
                 await connectToPeer(joinTargetId);
-                console.log('[P2P] WebRTC channel open');
+                console.log('[P2P] WebRTC channel open, waiting for host...');
             } catch(e) {
-                console.error('[P2P] Failed to connect to host:', e);
-                statusEl.textContent = 'Failed to connect to host. Try again.';
+                console.error('[P2P] Failed to connect:', e);
+                statusEl.textContent = 'Could not connect to host. Try again.';
                 return;
             }
-
-            // Also handle ready signal arriving via WebRTC DataChannel
-            const origDeliver = deliverToGame;
-            window._p2p_deliverToGame = (fromId, data) => {
-                // Check if it's a JSON ready signal rather than game data
-                try {
-                    const text = new TextDecoder().decode(data);
-                    if (text.startsWith('{')) {
-                        const msg = JSON.parse(text);
-                        if (msg.ready) { hostReadyResolve(); return; }
-                    }
-                } catch(e) {}
-                origDeliver(fromId, data);
-            };
-
-            statusEl.textContent = 'Waiting for host to load...';
+            statusEl.textContent = 'Waiting for host to load map...';
             await Promise.race([
                 hostReadyPromise,
-                new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 120000))
-            ]).catch(e => {
-                // Timeout — try connecting anyway
-                console.warn('[P2P] Host ready timeout, proceeding anyway');
-            });
+                new Promise(r => setTimeout(r, 120000))
+            ]);
             console.log('[P2P] Host ready, starting game');
         }
 
