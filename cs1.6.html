@@ -528,6 +528,7 @@
 
     function installWSHook() {
         window.WebSocket = function(url, protocols) {
+            console.log('[P2P] WebSocket() called with url:', url);
             // Only intercept P2P addresses
             const m = url.match(/(\d+\.\d+\.\d+\.\d+):(\d+)/);
             if (m && m[1].startsWith('101.101.')) {
@@ -699,9 +700,8 @@
             }
         }
 
-        // Install FakeWebSocket hook before Xash3D — SOCKFS will call
-        // new WebSocket('wss://101.101.X.Y:PORT') for outgoing connections
-        if (joinTargetId !== null) installWSHook();
+        // Install for both sides so we can see ALL WebSocket calls
+        installWSHook();
 
         const moduleConfig = {
             arguments: gameArgs,
@@ -722,6 +722,25 @@
                 });
                 this.FS.chdir('/rodir');
                 statusEl.style.display = 'none';
+
+                // Debug: check what networking APIs are available
+                console.log('[P2P] Module.net:', typeof this.net);
+                console.log('[P2P] Module.writeSockaddr:', typeof this.writeSockaddr);
+                console.log('[P2P] Module.readSockaddr:', typeof this.readSockaddr);
+                console.log('[P2P] Module.websocket:', JSON.stringify(this.websocket));
+                // Log all FS streams to find socket
+                try {
+                    const streams = this.FS.streams;
+                    console.log('[P2P] FS.streams count:', streams.length);
+                    streams.forEach((s, i) => {
+                        if (!s) return;
+                        const node = s.node;
+                        if (node) {
+                            const keys = Object.keys(node).filter(k => ['recv_queue','sport','saddr','sock','type','protocol'].includes(k));
+                            if (keys.length) console.log(`[P2P] stream[${i}] node keys:`, keys, 'sport:', node.sport, 'type:', node.type);
+                        }
+                    });
+                } catch(e) { console.log('[P2P] FS.streams error:', e.message); }
 
                 if (joinTargetId === null) {
                     // HOST: scan for SOCKFS socket, then broadcast ready
