@@ -869,7 +869,6 @@
             ],
             // Module.net is the pluggable network layer in xash3d-fwgs CDN build
             net: buildModuleNet(),
-            preRun: [function() { window._xashMod = this; console.log('[P2P] _xashMod set in preRun'); }],
             onRuntimeInitialized: function () {
                 Object.entries(files).forEach(([k, v]) => {
                     const dir = k.split('/').slice(0, -1).join('/');
@@ -942,6 +941,10 @@
             ]);
             console.log('[P2P] Host ready, starting game');
         }
+
+        // Point _xashMod at moduleConfig now — Emscripten will populate
+        // HEAPU8/HEAP32 etc. onto this same object before calling net functions
+        window._xashMod = moduleConfig;
 
         statusEl.textContent = 'Starting game...';
         Xash3D(moduleConfig);
