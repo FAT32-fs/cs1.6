@@ -15,62 +15,29 @@
         #lobby {
             display: flex; flex-direction: column; align-items: center; justify-content: center;
             position: fixed; inset: 0; background: #0b0b0b; z-index: 20;
-            font-family: monospace; color: white;
-            overflow-y: auto; padding: 24px 0;
+            font-family: monospace; color: white; overflow-y: auto; padding: 32px 16px;
         }
-        h2 { margin: 0 0 24px; font-size: 24px; letter-spacing: 4px; color: #f90; text-align: center; }
+        h2 { margin: 0 0 32px; font-size: 24px; letter-spacing: 4px; color: #f90; text-align: center; }
+        .lobby-inner { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 340px; }
 
-        .panels { display: flex; gap: 32px; align-items: flex-start; }
-
-        /* ── Panel ── */
-        .panel { display: flex; flex-direction: column; gap: 14px; width: 280px; }
-        .panel-title { color: #555; font-size: 10px; text-transform: uppercase; letter-spacing: 2px; border-bottom: 1px solid #1e1e1e; padding-bottom: 6px; }
-
-        /* ── Form rows ── */
+        /* ── Form fields ── */
         .field { display: flex; flex-direction: column; gap: 4px; }
-        .field label { color: #666; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
-        .field input[type=text], .field input[type=number] {
-            padding: 8px 10px; font-size: 15px; font-family: monospace;
-            background: #141414; border: 1px solid #2e2e2e; color: white; width: 100%;
+        .field label { color: #555; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
+        .field input[type=text] {
+            padding: 9px 12px; font-size: 15px; font-family: monospace;
+            background: #111; border: 1px solid #222; color: white; width: 100%;
         }
         .field input:focus { outline: none; border-color: #f90; }
 
-        /* ── Toggle ── */
-        .toggle-row { display: flex; align-items: center; justify-content: space-between; }
-        .toggle-row .toggle-label { color: #aaa; font-size: 12px; }
-        .toggle {
-            position: relative; width: 40px; height: 22px; cursor: pointer;
-        }
+        /* ── Toggle row ── */
+        .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; }
+        .toggle-row .tlabel { color: #aaa; font-size: 13px; }
+        .toggle { position: relative; width: 42px; height: 24px; cursor: pointer; flex-shrink: 0; }
         .toggle input { opacity: 0; width: 0; height: 0; }
-        .toggle-slider {
-            position: absolute; inset: 0; background: #222; border: 1px solid #333; transition: .2s;
-        }
-        .toggle-slider:before {
-            content: ''; position: absolute; width: 14px; height: 14px;
-            left: 3px; top: 3px; background: #555; transition: .2s;
-        }
+        .toggle-slider { position: absolute; inset: 0; background: #1a1a1a; border: 1px solid #2a2a2a; transition: .2s; }
+        .toggle-slider:before { content: ''; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #444; transition: .2s; }
         .toggle input:checked + .toggle-slider { background: #1a1200; border-color: #f90; }
         .toggle input:checked + .toggle-slider:before { background: #f90; transform: translateX(18px); }
-
-        /* ── Range slider ── */
-        input[type=range] {
-            -webkit-appearance: none; width: 100%; height: 4px;
-            background: #2a2a2a; outline: none; cursor: pointer;
-        }
-        input[type=range]::-webkit-slider-thumb {
-            -webkit-appearance: none; width: 14px; height: 14px; background: #f90; cursor: pointer;
-        }
-
-        /* ── Buttons ── */
-        .btn {
-            padding: 11px 0; font-size: 13px; font-family: monospace; width: 100%;
-            background: #f90; border: none; color: black; cursor: pointer; font-weight: bold; letter-spacing: 1px;
-        }
-        .btn:hover { background: #ffb733; }
-        .btn:disabled { background: #222; color: #555; cursor: default; }
-        .hint { color: #444; font-size: 10px; text-align: center; }
-
-        .divider { color: #1e1e1e; font-size: 12px; align-self: center; padding-top: 60px; }
 
         /* ── Map picker ── */
         .map-tabs { display: flex; }
@@ -78,11 +45,11 @@
             flex: 1; padding: 5px 0; font-size: 10px; font-family: monospace; cursor: pointer;
             background: #111; border: 1px solid #1e1e1e; color: #444; letter-spacing: 1px; border-bottom: none;
         }
-        .map-tab.active { background: #140e00; border-color: #f90; border-bottom: 1px solid #140e00; color: #f90; z-index: 1; }
+        .map-tab.active { background: #140e00; border-color: #f90; border-bottom: 1px solid #140e00; color: #f90; }
         .map-tab:hover:not(.active) { color: #999; }
         .map-grid {
             display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px;
-            max-height: 140px; overflow-y: auto;
+            max-height: 150px; overflow-y: auto;
             border: 1px solid #1e1e1e; padding: 4px; background: #0d0d0d;
         }
         .map-grid::-webkit-scrollbar { width: 3px; }
@@ -94,133 +61,209 @@
         }
         .map-cell:hover { border-color: #555; color: #ccc; background: #1a1a1a; }
         .map-cell.sel { border-color: #f90 !important; color: #f90 !important; background: #140e00 !important; }
-        .sel-map { font-size: 10px; color: #555; text-align: right; padding-top: 2px; }
+        .sel-map { font-size: 10px; color: #444; text-align: right; padding-top: 3px; }
         .sel-map b { color: #f90; }
-        #map-section.locked { pointer-events: none; opacity: 0.35; }
+
+        /* ── LAN section (shown when Open to LAN toggled) ── */
+        #lan-section { display: none; flex-direction: column; gap: 8px;
+                       border: 1px solid #1d1d1d; padding: 12px; background: #0d0d0d; }
+        #lan-section.visible { display: flex; }
+        #lan-link-row { display: none; flex-direction: column; gap: 4px; }
+        #lan-link-row.visible { display: flex; }
+        #lan-link-lbl { color: #3a3a3a; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
+        #lan-link { color: #f90; font-size: 10px; word-break: break-all; text-decoration: none; cursor: pointer; }
+
+        /* ── Bots section ── */
+        #bots-section { display: none; flex-direction: column; gap: 8px; }
+        #bots-section.visible { display: flex; }
+        .bots-count-row { display: flex; align-items: center; gap: 10px; }
+        .bots-count-row label { color: #555; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; flex: 1; }
+        .bots-count-row input[type=number] {
+            width: 54px; padding: 6px 8px; font-size: 14px; font-family: monospace;
+            background: #111; border: 1px solid #222; color: white; text-align: center;
+        }
+        .bots-count-row input[type=number]:focus { outline: none; border-color: #f90; }
+
+        /* ── Buttons ── */
+        .btn {
+            padding: 12px 0; font-size: 13px; font-family: monospace; width: 100%;
+            background: #f90; border: none; color: black; cursor: pointer; font-weight: bold; letter-spacing: 1px;
+        }
+        .btn:hover { background: #ffb733; }
+        .btn:disabled { background: #1a1a1a; color: #444; cursor: default; }
+        .btn-ghost {
+            padding: 9px 0; font-size: 12px; font-family: monospace; width: 100%;
+            background: transparent; border: 1px solid #222; color: #555; cursor: pointer;
+        }
+        .btn-ghost:hover { border-color: #555; color: #aaa; }
+
+        /* ── Volume widget (top-right, always visible after game starts) ── */
+        #vol-widget {
+            display: none; position: fixed; top: 14px; right: 14px; z-index: 100;
+            background: rgba(0,0,0,0.75); border: 1px solid #1e1e1e;
+            padding: 8px 12px; font-family: monospace; align-items: center; gap: 10px;
+        }
+        #vol-widget.visible { display: flex; }
+        #vol-widget span { color: #555; font-size: 10px; letter-spacing: 1px; white-space: nowrap; }
+        #vol-widget input[type=range] {
+            -webkit-appearance: none; width: 90px; height: 3px; background: #2a2a2a; outline: none; cursor: pointer;
+        }
+        #vol-widget input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 12px; height: 12px; background: #f90; cursor: pointer;
+        }
+        #vol-pct { color: #f90 !important; min-width: 32px; }
+
+        /* ── In-game overlay (ESC menu) ── */
+        #ig-overlay {
+            display: none; position: fixed; inset: 0; z-index: 50;
+            background: rgba(0,0,0,0.6); align-items: center; justify-content: center;
+            font-family: monospace;
+        }
+        #ig-overlay.visible { display: flex; }
+        #ig-panel {
+            background: #0b0b0b; border: 1px solid #1e1e1e;
+            padding: 28px 32px; width: 300px; display: flex; flex-direction: column; gap: 16px;
+        }
+        #ig-panel h3 { margin: 0; font-size: 13px; letter-spacing: 3px; color: #f90; text-align: center; }
+        .ig-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .ig-row label { color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+        .ig-row input[type=range] {
+            -webkit-appearance: none; flex: 1; height: 3px; background: #2a2a2a; outline: none; cursor: pointer;
+        }
+        .ig-row input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 12px; height: 12px; background: #f90; cursor: pointer;
+        }
+        .ig-row span { color: #f90; font-size: 11px; min-width: 32px; text-align: right; }
+        .ig-sep { border: none; border-top: 1px solid #1a1a1a; margin: 0; }
+        .ig-bots { display: flex; flex-direction: column; gap: 10px; }
+        .ig-bots-title { color: #444; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
+        .ig-bots-row { display: flex; gap: 8px; }
+        .ig-bots-row button {
+            flex: 1; padding: 8px 0; font-size: 11px; font-family: monospace; cursor: pointer;
+            background: #111; border: 1px solid #222; color: #aaa;
+        }
+        .ig-bots-row button:hover { border-color: #f90; color: #f90; }
+        .diff-row { display: flex; gap: 4px; }
+        .diff-btn {
+            flex: 1; padding: 6px 0; font-size: 10px; font-family: monospace; cursor: pointer;
+            background: #111; border: 1px solid #1a1a1a; color: #444;
+        }
+        .diff-btn.active { background: #140e00; border-color: #f90; color: #f90; }
+        .ig-close { margin-top: 4px; }
+        input[type=range] {
+            -webkit-appearance: none; width: 100%; height: 4px;
+            background: #2a2a2a; outline: none; cursor: pointer;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 14px; height: 14px; background: #f90; cursor: pointer;
+        }
     </style>
-    <script>
-    // Must run BEFORE raw.js — Emscripten captures window.WebSocket at load time
-    (function() {
-        const _Orig = window.WebSocket;
-        window._xash3dRecvQueues = []; // host will push sockets here
-        window.WebSocket = function(url, protocols) {
-            console.log('[P2P-early] WebSocket called:', url);
-            const m = url && url.match(/(\d+\.\d+\.\d+\.\d+):(\d+)/);
-            if (m && m[1].startsWith('101.101.')) {
-                console.log('[P2P-early] Intercepting P2P WebSocket to', m[1], ':', m[2]);
-                const fake = {
-                    _url: url, _addr: m[1], _port: parseInt(m[2]),
-                    binaryType: 'arraybuffer', readyState: 0,
-                    _listeners: {},
-                    addEventListener(e, fn) { (this._listeners[e] = this._listeners[e]||[]).push(fn); },
-                    removeEventListener(e, fn) { if(this._listeners[e]) this._listeners[e]=this._listeners[e].filter(f=>f!==fn); },
-                    _emit(e, d) { (this._listeners[e]||[]).forEach(fn=>{try{fn(d);}catch(err){}}); },
-                    set onopen(fn)    { this.addEventListener('open',fn);    },
-                    set onmessage(fn) { this.addEventListener('message',fn); },
-                    set onerror(fn)   { this.addEventListener('error',fn);   },
-                    set onclose(fn)   { this.addEventListener('close',fn);   },
-                    send(data) { window._p2pSend && window._p2pSend(this._addr, this._port, data); },
-                    close() { this.readyState=3; this._emit('close',{type:'close',code:1000,wasClean:true}); },
-                };
-                // Register this fake socket so P2P layer can deliver to it
-                window._p2pRegisterSocket && window._p2pRegisterSocket(fake);
-                // Store for later registration once P2P is set up
-                (window._pendingFakeSockets = window._pendingFakeSockets || []).push(fake);
-                // Open asynchronously
-                setTimeout(() => { fake.readyState=1; fake._emit('open',{type:'open'}); }, 0);
-                return fake;
-            }
-            return new _Orig(url, protocols);
-        };
-        Object.assign(window.WebSocket, {CONNECTING:0,OPEN:1,CLOSING:2,CLOSED:3});
-        window.WebSocket.prototype = _Orig.prototype;
-        console.log('[P2P-early] WebSocket hook installed');
-    })();
-    </script>
     <script src="https://cdn.jsdelivr.net/npm/xash3d-fwgs@latest/dist/raw.js"></script>
 </head>
 <body>
 
+<!-- ── Volume widget (always visible in-game) ── -->
+<div id="vol-widget">
+    <span>VOL</span>
+    <input type="range" id="vol-range" min="0" max="100" value="80" />
+    <span id="vol-pct">80%</span>
+</div>
+
+<!-- ── In-game ESC overlay ── -->
+<div id="ig-overlay">
+    <div id="ig-panel">
+        <h3>SETTINGS</h3>
+
+        <div class="ig-row">
+            <label>Volume</label>
+            <input type="range" id="ig-vol" min="0" max="100" value="80" />
+            <span id="ig-vol-pct">80%</span>
+        </div>
+
+        <hr class="ig-sep">
+
+        <div class="ig-bots" id="ig-bots-panel">
+            <div class="ig-bots-title">Bots</div>
+            <div class="ig-bots-row">
+                <button id="ig-add-ct">+ CT Bot</button>
+                <button id="ig-add-t">+ T Bot</button>
+                <button id="ig-kick-bot">− Kick Bot</button>
+            </div>
+            <div>
+                <div class="ig-bots-title" style="margin-bottom:6px">Difficulty</div>
+                <div class="diff-row">
+                    <button class="diff-btn active" data-diff="0">Easy</button>
+                    <button class="diff-btn" data-diff="1">Normal</button>
+                    <button class="diff-btn" data-diff="2">Hard</button>
+                    <button class="diff-btn" data-diff="3">Expert</button>
+                </div>
+            </div>
+        </div>
+
+        <button class="btn ig-close" id="ig-close">RESUME</button>
+    </div>
+</div>
+
+<!-- ── Lobby ── -->
 <div id="lobby">
     <h2>CS 1.6</h2>
-    <div class="panels">
+    <div class="lobby-inner">
 
-        <!-- ── HOST PANEL ── -->
-        <div class="panel">
-            <div class="panel-title">Host a game</div>
+        <!-- Player name -->
+        <div class="field">
+            <label>Player Name</label>
+            <input type="text" id="player-name" placeholder="Player" maxlength="32" value="Player" />
+        </div>
 
-            <!-- Player name -->
-            <div class="field">
-                <label>Player Name</label>
-                <input type="text" id="host-name" placeholder="Player" maxlength="32" value="Player" />
+        <!-- Map picker -->
+        <div class="field" id="map-section">
+            <label>Map</label>
+            <div class="map-tabs">
+                <button class="map-tab active" data-cat="de">Bomb</button>
+                <button class="map-tab" data-cat="cs">Hostage</button>
+                <button class="map-tab" data-cat="as">Assassin</button>
+                <button class="map-tab" data-cat="fy">Fun</button>
             </div>
+            <div class="map-grid" id="map-grid"></div>
+            <div class="sel-map">Map: <b id="map-label">de_dust2</b></div>
+        </div>
 
-            <!-- Map picker -->
-            <div class="field" id="map-section">
-                <label>Map</label>
-                <div class="map-tabs">
-                    <button class="map-tab active" data-cat="de">Bomb</button>
-                    <button class="map-tab" data-cat="cs">Hostage</button>
-                    <button class="map-tab" data-cat="as">Assassin</button>
-                    <button class="map-tab" data-cat="fy">Fun</button>
-                </div>
-                <div class="map-grid" id="map-grid"></div>
-                <div class="sel-map">Selected: <b id="map-label">de_dust2</b></div>
-            </div>
+        <!-- Bots toggle -->
+        <div class="toggle-row">
+            <span class="tlabel">Add Bots</span>
+            <label class="toggle">
+                <input type="checkbox" id="bots-toggle" />
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
 
-            <!-- Bots toggle -->
-            <div class="field">
-                <div class="toggle-row">
-                    <span class="toggle-label">Add Bots</span>
-                    <label class="toggle">
-                        <input type="checkbox" id="bots-toggle" />
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-            </div>
-
-            <!-- Bots per team (shown when toggle on) -->
-            <div class="field" id="bots-count-row" style="display:none">
+        <!-- Bots options (shown when toggled) -->
+        <div id="bots-section">
+            <div class="bots-count-row">
                 <label>Bots per team</label>
                 <input type="number" id="bots-per-team" value="3" min="1" max="9" />
             </div>
-
-            <!-- Volume -->
-            <div class="field">
-                <label>Volume: <span id="vol-display">80%</span></label>
-                <input type="range" id="volume-slider" min="0" max="100" value="80" />
-            </div>
-
-            <button class="btn" id="btn-host">HOST GAME</button>
-
-            <button class="btn" id="btn-start" style="display:none">▶ START GAME</button>
-            <div id="host-link-row" style="display:none">
-                <div style="color:#555;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Share this link</div>
-                <a id="host-join-link" href="#" style="color:#f90;font-size:10px;word-break:break-all;text-decoration:none" onclick="navigator.clipboard.writeText(this.href);this.textContent='✓ Copied!';setTimeout(()=>this.textContent=this.href,2000);return false"></a>
-            </div>
-            <div class="hint" id="host-hint" style="display:none">Share the link above, then press Start when ready</div>
         </div>
 
-        <div class="divider">— or —</div>
-
-        <!-- ── JOIN PANEL ── -->
-        <div class="panel">
-            <div class="panel-title">Join a game</div>
-
-            <div class="field">
-                <label>Player Name</label>
-                <input type="text" id="join-name" placeholder="Player" maxlength="32" value="Player" />
-            </div>
-
-            <div class="field">
-                <label>Volume: <span id="join-vol-display">80%</span></label>
-                <input type="range" id="join-volume-slider" min="0" max="100" value="80" />
-            </div>
-
-            <input type="number" id="join-id" style="display:none" />
-            <button class="btn" id="btn-join">JOIN GAME</button>
-            <div class="hint">Open the host's link to join, or paste it in your browser</div>
+        <!-- Open to LAN toggle -->
+        <div class="toggle-row">
+            <span class="tlabel">Open to LAN</span>
+            <label class="toggle">
+                <input type="checkbox" id="lan-toggle" />
+                <span class="toggle-slider"></span>
+            </label>
         </div>
+
+        <!-- LAN section -->
+        <div id="lan-section">
+            <div id="lan-link-row">
+                <div id="lan-link-lbl">Share this link</div>
+                <a id="lan-link" onclick="navigator.clipboard.writeText(this.href);this.textContent='✓ Copied!';setTimeout(()=>this.textContent=this.href,2000);return false"></a>
+            </div>
+        </div>
+
+        <!-- Start button -->
+        <button class="btn" id="btn-start">▶ PLAY</button>
 
     </div>
 </div>
@@ -259,32 +302,21 @@
 
     function renderMaps() {
         const grid = document.getElementById('map-grid');
-        // Clear grid
         while (grid.firstChild) grid.removeChild(grid.firstChild);
         MAPS[activeTab].forEach(m => {
             const el = document.createElement('div');
             el.className = 'map-cell' + (m === selectedMap ? ' sel' : '');
-            el.textContent = m;
-            el.title = m;
-            el.addEventListener('click', () => {
-                selectedMap = m;
-                document.getElementById('map-label').textContent = m;
-                renderMaps();
-            });
+            el.textContent = m; el.title = m;
+            el.addEventListener('click', () => { selectedMap = m; document.getElementById('map-label').textContent = m; renderMaps(); });
             grid.appendChild(el);
         });
     }
-
     document.querySelectorAll('.map-tab').forEach(tab => {
         tab.addEventListener('click', () => {
             document.querySelectorAll('.map-tab').forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
             activeTab = tab.dataset.cat;
-            // If selected map not in new tab, pick first
-            if (!MAPS[activeTab].includes(selectedMap)) {
-                selectedMap = MAPS[activeTab][0];
-                document.getElementById('map-label').textContent = selectedMap;
-            }
+            if (!MAPS[activeTab].includes(selectedMap)) { selectedMap = MAPS[activeTab][0]; document.getElementById('map-label').textContent = selectedMap; }
             renderMaps();
         });
     });
@@ -292,38 +324,118 @@
 
     // ─── Bots toggle ─────────────────────────────────────────────────────────
     document.getElementById('bots-toggle').addEventListener('change', function() {
-        document.getElementById('bots-count-row').style.display = this.checked ? 'flex' : 'none';
+        document.getElementById('bots-section').classList.toggle('visible', this.checked);
+    });
+
+    // ─── Open to LAN toggle ───────────────────────────────────────────────────
+    let lanEnabled = false;
+    document.getElementById('lan-toggle').addEventListener('change', async function() {
+        lanEnabled = this.checked;
+        document.getElementById('lan-section').classList.toggle('visible', lanEnabled);
+        if (lanEnabled && !myHostId) {
+            const btn = document.getElementById('btn-start');
+            btn.disabled = true; btn.textContent = 'Connecting...';
+            try {
+                const id = await connectSignaling();
+                const joinUrl = `${location.origin}${location.pathname}?join=${id}`;
+                const link = document.getElementById('lan-link');
+                link.href = joinUrl; link.textContent = joinUrl;
+                document.getElementById('lan-link-row').classList.add('visible');
+                btn.disabled = false; btn.textContent = '▶ PLAY';
+            } catch(e) {
+                alert('Could not connect to signaling server:\n' + e.message);
+                this.checked = false; lanEnabled = false;
+                document.getElementById('lan-section').classList.remove('visible');
+                btn.disabled = false; btn.textContent = '▶ PLAY';
+            }
+        }
+    });
+
+    // ─── Volume widget (top-right, always visible in-game) ───────────────────
+    function syncVolume(val) {
+        document.getElementById('vol-range').value = val;
+        document.getElementById('vol-pct').textContent = val + '%';
+        document.getElementById('ig-vol').value = val;
+        document.getElementById('ig-vol-pct').textContent = val + '%';
+        volumeVal = val / 100;
+        if (window._xashMod?.executeString) window._xashMod.executeString(`volume ${volumeVal.toFixed(2)}`);
+    }
+    document.getElementById('vol-range').addEventListener('input', function() { syncVolume(parseInt(this.value)); });
+    document.getElementById('ig-vol').addEventListener('input', function() { syncVolume(parseInt(this.value)); });
+
+    // ─── In-game ESC overlay ──────────────────────────────────────────────────
+    let igVisible = false;
+    let currentDiff = 0;
+
+    function showIgOverlay() {
+        igVisible = true;
+        document.getElementById('ig-overlay').classList.add('visible');
+        // Only show bot panel for host
+        document.getElementById('ig-bots-panel').style.display = joinTargetId === null ? 'flex' : 'none';
+        // Unlock pointer
+        if (document.pointerLockElement) document.exitPointerLock();
+    }
+    function hideIgOverlay() {
+        igVisible = false;
+        document.getElementById('ig-overlay').classList.remove('visible');
+    }
+
+    document.getElementById('ig-close').addEventListener('click', hideIgOverlay);
+
+    document.getElementById('ig-overlay').addEventListener('click', function(e) {
+        if (e.target === this) hideIgOverlay();
+    });
+
+    // Difficulty buttons
+    document.querySelectorAll('.diff-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            currentDiff = parseInt(this.dataset.diff);
+            if (window._xashMod?.executeString) window._xashMod.executeString(`bot_difficulty ${currentDiff}`);
+        });
+    });
+
+    // Bot controls
+    document.getElementById('ig-add-ct').addEventListener('click', () => {
+        if (window._xashMod?.executeString) { window._xashMod.executeString('bot_join_team ct'); window._xashMod.executeString('addbot'); }
+    });
+    document.getElementById('ig-add-t').addEventListener('click', () => {
+        if (window._xashMod?.executeString) { window._xashMod.executeString('bot_join_team t'); window._xashMod.executeString('addbot'); }
+    });
+    document.getElementById('ig-kick-bot').addEventListener('click', () => {
+        if (window._xashMod?.executeString) window._xashMod.executeString('bot_kick');
+    });
+
+    // ESC key toggles overlay (only when game is running)
+    let gameRunning = false;
+    document.addEventListener('keydown', e => {
+        if (!gameRunning) return;
+        if (e.key === 'Escape') { igVisible ? hideIgOverlay() : showIgOverlay(); }
     });
 
     // ─── Auto-join from URL param ─────────────────────────────────────────────
-    const _urlJoinId = new URLSearchParams(location.search).get('join');
-    if (_urlJoinId) {
-        document.getElementById('join-id').value = _urlJoinId;
-        // Scroll join panel into view and highlight it
-        document.getElementById('join-id').style.borderColor = '#f90';
-        setTimeout(() => document.getElementById('join-id').style.borderColor = '', 3000);
-    }
-
-    // ─── Volume sliders ───────────────────────────────────────────────────────
-    document.getElementById('volume-slider').addEventListener('input', function() {
-        document.getElementById('vol-display').textContent = this.value + '%';
-    });
-    document.getElementById('join-volume-slider').addEventListener('input', function() {
-        document.getElementById('join-vol-display').textContent = this.value + '%';
-    });
+    const _urlJoinId = parseInt(new URLSearchParams(location.search).get('join') || '0');
 
     // ─── State ───────────────────────────────────────────────────────────────
     const statusEl   = document.getElementById('status');
     const lobby      = document.getElementById('lobby');
     let myHostId     = null;
-    let joinTargetId = null;
+    let joinTargetId = _urlJoinId || null;
     let sigSocket    = null;
     let playerName   = 'Player';
     let volumeVal    = 0.8;
     let botsEnabled  = false;
     let botsPerTeam  = 3;
 
-    // Buffer for messages that arrive before VirtualNetworkWrapper is ready
+    // If opened via join link, show joining state
+    if (_urlJoinId) {
+        document.getElementById('btn-start').textContent = `▶ JOIN GAME`;
+        document.getElementById('map-section').style.display = 'none';
+        document.getElementById('bots-toggle').closest('.toggle-row').style.display = 'none';
+        document.getElementById('lan-toggle').closest('.toggle-row').style.display = 'none';
+    }
+
     const sigBuffer = [];
     let sigHandler  = null;
 
@@ -333,12 +445,7 @@
             sigSocket.onmessage = e => {
                 let msg;
                 try { msg = JSON.parse(e.data); } catch { return; }
-                if (msg.hostId !== undefined) {
-                    myHostId = msg.hostId;
-                    resolve(msg.hostId);
-                    return;
-                }
-                // Forward to VNW handler, or buffer if not ready yet
+                if (msg.hostId !== undefined) { myHostId = msg.hostId; resolve(msg.hostId); return; }
                 if (sigHandler) sigHandler(msg);
                 else sigBuffer.push(msg);
             };
@@ -347,55 +454,35 @@
         });
     }
 
-    // ─── Host ────────────────────────────────────────────────────────────────
-    document.getElementById('btn-host').addEventListener('click', async () => {
-        const btn = document.getElementById('btn-host');
-        btn.disabled = true; btn.textContent = 'Connecting...';
-        try {
-            const id = await connectSignaling();
-            document.getElementById('btn-start').style.display = 'block';
-            // Build shareable link
-            const joinUrl = `${location.origin}${location.pathname}?join=${id}`;
-            document.getElementById('host-join-link').href = joinUrl;
-            document.getElementById('host-join-link').textContent = joinUrl;
-            document.getElementById('host-link-row').style.display = 'block';
-            document.getElementById('host-hint').style.display = 'block';
-            document.getElementById('map-section').classList.add('locked');
-            btn.style.display = 'none';
-        } catch(e) {
-            alert('Could not connect to signaling server:\n' + e.message);
-            btn.disabled = false; btn.textContent = 'HOST GAME';
-        }
-    });
-
-    document.getElementById('btn-start').addEventListener('click', () => {
-        playerName  = (document.getElementById('host-name').value.trim() || 'Player');
-        volumeVal   = parseInt(document.getElementById('volume-slider').value) / 100;
+    // ─── Play button ─────────────────────────────────────────────────────────
+    document.getElementById('btn-start').addEventListener('click', async () => {
+        const btn = document.getElementById('btn-start');
+        playerName  = document.getElementById('player-name').value.trim() || 'Player';
+        volumeVal   = parseInt(document.getElementById('vol-range').value) / 100;
         botsEnabled = document.getElementById('bots-toggle').checked;
         botsPerTeam = parseInt(document.getElementById('bots-per-team').value) || 3;
-        lobby.style.display = 'none';
-        statusEl.style.display = 'block';
-        startGame();
-    });
 
-    // ─── Join ────────────────────────────────────────────────────────────────
-    document.getElementById('btn-join').addEventListener('click', async () => {
-        const id = parseInt(document.getElementById('join-id').value);
-        if (!id) return alert('Enter a valid host ID');
-        joinTargetId = id;
-        playerName   = (document.getElementById('join-name').value.trim() || 'Player');
-        volumeVal    = parseInt(document.getElementById('join-volume-slider').value) / 100;
-        const btn = document.getElementById('btn-join');
-        btn.disabled = true; btn.textContent = 'Connecting...';
-        try {
-            await connectSignaling();
+        if (joinTargetId) {
+            // Joining via URL link
+            btn.disabled = true; btn.textContent = 'Connecting...';
+            try {
+                await connectSignaling();
+                lobby.style.display = 'none';
+                statusEl.style.display = 'block';
+                startGame();
+            } catch(e) {
+                alert('Could not connect:\n' + e.message);
+                btn.disabled = false; btn.textContent = '▶ JOIN GAME';
+            }
+        } else {
+            // Solo or hosting
+            if (lanEnabled && !myHostId) {
+                alert('Still connecting to signaling server, please wait...');
+                return;
+            }
             lobby.style.display = 'none';
             statusEl.style.display = 'block';
             startGame();
-        } catch(e) {
-            alert('Could not connect to signaling server:\n' + e.message);
-            btn.disabled = false; btn.textContent = 'JOIN GAME';
-            joinTargetId = null;
         }
     });
 
@@ -784,6 +871,11 @@
 
                 window._xashMod = this;
                 console.log('[P2P] Module.net:', typeof this.net, Object.keys(this.net || {}).join(','));
+                // Show persistent vol widget + enable ESC overlay
+                document.getElementById('vol-widget').classList.add('visible');
+                gameRunning = true;
+                // Apply initial volume
+                if (this.executeString) this.executeString(`volume ${volumeVal.toFixed(2)}`);
 
                 if (joinTargetId === null) {
                     // HOST: broadcast ready after map loads (~6s)
@@ -796,13 +888,13 @@
                         console.log('[P2P] broadcast ready sent');
 
                         if (botsEnabled) {
-                            const cmds = [`bot_quota ${botsPerTeam * 2}`, 'bot_difficulty 1',
-                                'bot_join_after_player 0', 'bot_auto_vacate 0', 'bot_join_team ct'];
-                            for (let i = 0; i < botsPerTeam; i++) cmds.push('addbot');
-                            cmds.push('bot_join_team t');
-                            for (let i = 0; i < botsPerTeam; i++) cmds.push('addbot');
-                            cmds.push('bot_join_team any');
-                            cmds.forEach(cmd => mod.executeString?.(cmd));
+                            [`bot_quota ${botsPerTeam * 2}`, 'bot_difficulty 1',
+                             'bot_join_after_player 0', 'bot_auto_vacate 0', 'bot_join_team ct',
+                             ...Array(botsPerTeam).fill('addbot'),
+                             'bot_join_team t',
+                             ...Array(botsPerTeam).fill('addbot'),
+                             'bot_join_team any'
+                            ].forEach(cmd => mod.executeString?.(cmd));
                         }
                     }, 6000);
                 }
@@ -821,6 +913,11 @@
                 }
             },
         };
+
+        // Connect signaling if not already connected (lanEnabled connected earlier)
+        if (joinTargetId !== null || (lanEnabled && !myHostId)) {
+            if (!myHostId) await connectSignaling();
+        }
 
         // If joining: open WebRTC channel then wait for host ready signal
         if (joinTargetId !== null) {
