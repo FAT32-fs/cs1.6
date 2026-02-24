@@ -70,14 +70,6 @@
         .btn:disabled { background: #222; color: #555; cursor: default; }
         .hint { color: #444; font-size: 10px; text-align: center; }
 
-        /* ── Host ID display ── */
-        #host-id-display {
-            display: none; background: #091200; border: 1px solid #1d3300;
-            padding: 12px; text-align: center;
-        }
-        #host-id-display .lbl { color: #3d6600; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; }
-        #host-id-display .val { color: #66ff00; font-size: 38px; letter-spacing: 8px; font-weight: bold; }
-
         .divider { color: #1e1e1e; font-size: 12px; align-self: center; padding-top: 60px; }
 
         /* ── Map picker ── */
@@ -200,12 +192,13 @@
             </div>
 
             <button class="btn" id="btn-host">HOST GAME</button>
-            <div id="host-id-display">
-                <div class="lbl">Your ID — share with friends</div>
-                <div class="val" id="host-id-value"></div>
-            </div>
+
             <button class="btn" id="btn-start" style="display:none">▶ START GAME</button>
-            <div class="hint" id="host-hint" style="display:none">Share your ID, then press Start</div>
+            <div id="host-link-row" style="display:none">
+                <div style="color:#555;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Share this link</div>
+                <a id="host-join-link" href="#" style="color:#f90;font-size:10px;word-break:break-all;text-decoration:none" onclick="navigator.clipboard.writeText(this.href);this.textContent='✓ Copied!';setTimeout(()=>this.textContent=this.href,2000);return false"></a>
+            </div>
+            <div class="hint" id="host-hint" style="display:none">Share the link above, then press Start when ready</div>
         </div>
 
         <div class="divider">— or —</div>
@@ -224,13 +217,9 @@
                 <input type="range" id="join-volume-slider" min="0" max="100" value="80" />
             </div>
 
-            <div class="field">
-                <label>Host ID</label>
-                <input type="number" id="join-id" placeholder="e.g. 1" min="1" />
-            </div>
-
+            <input type="number" id="join-id" style="display:none" />
             <button class="btn" id="btn-join">JOIN GAME</button>
-            <div class="hint">Ask the host for their ID number</div>
+            <div class="hint">Open the host's link to join, or paste it in your browser</div>
         </div>
 
     </div>
@@ -306,6 +295,15 @@
         document.getElementById('bots-count-row').style.display = this.checked ? 'flex' : 'none';
     });
 
+    // ─── Auto-join from URL param ─────────────────────────────────────────────
+    const _urlJoinId = new URLSearchParams(location.search).get('join');
+    if (_urlJoinId) {
+        document.getElementById('join-id').value = _urlJoinId;
+        // Scroll join panel into view and highlight it
+        document.getElementById('join-id').style.borderColor = '#f90';
+        setTimeout(() => document.getElementById('join-id').style.borderColor = '', 3000);
+    }
+
     // ─── Volume sliders ───────────────────────────────────────────────────────
     document.getElementById('volume-slider').addEventListener('input', function() {
         document.getElementById('vol-display').textContent = this.value + '%';
@@ -355,9 +353,12 @@
         btn.disabled = true; btn.textContent = 'Connecting...';
         try {
             const id = await connectSignaling();
-            document.getElementById('host-id-value').textContent = id;
-            document.getElementById('host-id-display').style.display = 'block';
             document.getElementById('btn-start').style.display = 'block';
+            // Build shareable link
+            const joinUrl = `${location.origin}${location.pathname}?join=${id}`;
+            document.getElementById('host-join-link').href = joinUrl;
+            document.getElementById('host-join-link').textContent = joinUrl;
+            document.getElementById('host-link-row').style.display = 'block';
             document.getElementById('host-hint').style.display = 'block';
             document.getElementById('map-section').classList.add('locked');
             btn.style.display = 'none';
