@@ -666,9 +666,16 @@
                 this.FS.chdir('/rodir');
                 statusEl.style.display = 'none';
 
-                // Store module ref so module.net hooks can access HEAPU8
                 window._xashMod = this;
-                console.log('[P2P] Module.net:', typeof this.net, '| Module ready');
+                // Log what Module.net actually is after engine init
+                console.log('[P2P] Module.net type:', typeof this.net);
+                if (this.net) {
+                    console.log('[P2P] Module.net keys:', Object.keys(this.net).join(','));
+                    console.log('[P2P] Module.net.sendto type:', typeof this.net.sendto);
+                    console.log('[P2P] Module.net.recvfrom type:', typeof this.net.recvfrom);
+                    // Check if engine replaced our net with its own
+                    console.log('[P2P] net is ours?', this.net.getHostId?.() === myHostId);
+                }
 
                 if (joinTargetId === null) {
                     // HOST: broadcast ready after map loads (~6s)
