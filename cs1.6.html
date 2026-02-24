@@ -500,6 +500,10 @@
     const sockets   = new Map();
     let   nextFd    = 10;
 
+    // Shared module reference — filled by onRuntimeInitialized
+    // Net functions use this to access HEAPU8/HEAP32 etc.
+    const netRef = { mod: null };
+
     // ── Signaling ─────────────────────────────────────────────────────────────
     let hostReadyResolve = null;
     const hostReadyPromise = new Promise(r => { hostReadyResolve = r; });
@@ -657,9 +661,15 @@
 
             // bind(fd, addrPtr, addrLen) → 0
             bind(fd, addrPtr, addrLen) {
-                const mod = window._xashMod;
+                const mod = netRef.mod;
                 const sock = sockets.get(fd);
-                if (!sock || !mod) return -1;
+                if (!sock) return -1;
+                if (!mod?.HEAPU8) {
+                    // HEAPU8 not ready yet — store ptr and resolve later
+                    sock._pendingBindPtr = addrPtr;
+                    console.log(`[P2P] bind(fd=${fd}) deferred`);
+                    return 0;
+                }
                 const { port } = readSockaddr(mod.HEAPU8, addrPtr);
                 sock.boundPort = port;
                 console.log(`[P2P] bind(fd=${fd}) port=${port}`);
@@ -668,10 +678,9 @@
 
             // gethostname(namePtr, len) → 0
             gethostname(namePtr, len) {
-                const mod = window._xashMod;
-                if (!mod) return -1;
-                // Return virtual IP based on our hostId
+                const mod = netRef.mod;
                 const ip = `101.101.${myHostId & 255}.${(myHostId >> 8) & 255}`;
+                if (!mod?.HEAPU8) { console.log(`[P2P] gethostname deferred`); return 0; }
                 writeString(mod.HEAPU8, namePtr, ip, len);
                 console.log(`[P2P] gethostname() → ${ip}`);
                 return 0;
@@ -679,8 +688,8 @@
 
             // getaddrinfo(nodePtr, servicePtr, hintsPtr, resPtr) → 0
             getaddrinfo(nodePtr, servicePtr, hintsPtr, resPtr) {
-                const mod = window._xashMod;
-                if (!mod) return -1;
+                const mod = netRef.mod;
+                if (!mod?.HEAPU8) { console.log(`[P2P] getaddrinfo deferred`); return 0; }
                 // Read the hostname/IP being resolved
                 let hostname = '';
                 if (nodePtr) {
@@ -726,7 +735,7 @@
 
             // freeaddrinfo(ptr) — free the malloc'd struct
             freeaddrinfo(ptr) {
-                const mod = window._xashMod;
+                const mod = netRef.mod;
                 if (mod && ptr) mod._free(ptr);
             },
 
@@ -750,9 +759,9 @@
 
             // recvfrom(fd, bufPtr, bufLen, flags, addrPtr, addrLenPtr) → len or -1
             recvfrom(fd, bufPtr, bufLen, flags, addrPtr, addrLenPtr) {
-                const mod = window._xashMod;
+                const mod = netRef.mod;
                 const sock = sockets.get(fd);
-                if (!mod || !sock) return -1;
+                if (!mod?.HEAPU8 || !sock) return -11; // EAGAIN until ready
                 const pkt = sock.recvQueue.shift();
                 if (!pkt) return -11; // EAGAIN
 
@@ -769,8 +778,8 @@
 
             // sendto(fd, bufPtr, bufLen, flags, addrPtr, addrLen) → bufLen
             sendto(fd, bufPtr, bufLen, flags, addrPtr, addrLen) {
-                const mod = window._xashMod;
-                if (!mod) return bufLen;
+                const mod = netRef.mod;
+                if (!mod?.HEAPU8) return bufLen;
 
                 const { addr, port } = readSockaddr(mod.HEAPU8, addrPtr);
                 if (addr === '255.255.255.255' || addr === '0.0.0.0') return bufLen;
@@ -878,12 +887,12 @@
                 this.FS.chdir('/rodir');
                 statusEl.style.display = 'none';
 
-                window._xashMod = this;
-                console.log('[P2P] Module.net:', typeof this.net, Object.keys(this.net || {}).join(','));
-                // Show persistent vol widget + enable ESC overlay
+                // Set netRef.mod so net hook functions can access HEAPU8
+                netRef.mod = this;
+                window._xashMod = this; // also keep global ref for bot commands
+                console.log('[P2P] Module ready, HEAPU8:', !!this.HEAPU8);
                 document.getElementById('vol-widget').classList.add('visible');
                 gameRunning = true;
-                // Apply initial volume
                 if (this.executeString) this.executeString(`volume ${volumeVal.toFixed(2)}`);
 
                 if (joinTargetId === null) {
@@ -941,10 +950,6 @@
             ]);
             console.log('[P2P] Host ready, starting game');
         }
-
-        // Point _xashMod at moduleConfig now — Emscripten will populate
-        // HEAPU8/HEAP32 etc. onto this same object before calling net functions
-        window._xashMod = moduleConfig;
 
         statusEl.textContent = 'Starting game...';
         Xash3D(moduleConfig);
