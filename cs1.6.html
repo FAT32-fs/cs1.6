@@ -399,20 +399,18 @@
     });
 
     // ─── P2P Networking ──────────────────────────────────────────────────────────
-    // The CDN xash3d-fwgs build has a "Pluggable Network Layer" (Module.net).
-    // The engine checks for Module.net at startup and uses it instead of SOCKFS.
-    // We set moduleConfig.net before Xash3D() so it merges into Module.
-    //
-    // sockaddr_in layout (Emscripten/little-endian host):
-    //   0: sa_family uint16 = 2 (AF_INET)
-    //   2: sin_port  uint16 big-endian
-    //   4: sin_addr  uint32 big-endian (network byte order)
+    // Module.net must implement a full POSIX UDP socket API.
+    // The engine calls: socket, bind, gethostname, getaddrinfo, sendto, recvfrom.
+    // We implement these as virtual sockets routed through WebRTC DataChannels.
     // ─────────────────────────────────────────────────────────────────────────
 
     const peers     = new Map();   // `myId:peerId` → RTCPeerConnection
     const channels  = new Map();   // peerId → RTCDataChannel
     const sendQueue = new Map();   // peerId → ArrayBuffer[]
-    const recvQueue = [];          // { fromAddr, fromPort, data: Uint8Array }
+
+    // Virtual socket table: fd → { recvQueue, boundPort }
+    const sockets   = new Map();
+    let   nextFd    = 10;
 
     // ── Signaling ─────────────────────────────────────────────────────────────
     let hostReadyResolve = null;
@@ -444,7 +442,7 @@
     };
     sigBuffer.splice(0).forEach(m => sigHandler(m));
 
-    // ── WebRTC peer ────────────────────────────────────────────────────────────
+    // ── WebRTC ────────────────────────────────────────────────────────────────
     function makePeer(peerId, initiator) {
         const key = `${myHostId}:${peerId}`;
         if (peers.has(key)) return peers.get(key);
@@ -470,11 +468,13 @@
                 sendQueue.delete(peerId);
             });
             ch.addEventListener('message', ({ data }) => {
-                // Convert to Uint8Array and push into recvQueue
-                const bytes = data instanceof ArrayBuffer ? new Uint8Array(data)
-                            : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+                // Deliver to all bound sockets (engine typically has one UDP socket)
+                const bytes = new Uint8Array(data instanceof ArrayBuffer ? data : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
                 const fromAddr = `101.101.${peerId & 255}.${(peerId >> 8) & 255}`;
-                recvQueue.push({ fromAddr, fromPort: 27015, data: bytes });
+                sockets.forEach(sock => {
+                    sock.recvQueue.push({ fromAddr, fromPort: 27015, data: bytes });
+                });
+                if (sockets.size === 0) console.warn('[P2P] packet arrived but no sockets to deliver to!');
             });
             ch.addEventListener('close', () => channels.delete(peerId));
         }
@@ -501,113 +501,191 @@
         });
     }
 
-    // ── sockaddr helpers (manual, no writeSockaddr/readSockaddr needed) ────────
-    function readSockaddr(HEAPU8, addrPtr) {
-        // port at +2, big-endian uint16
-        const port = (HEAPU8[addrPtr + 2] << 8) | HEAPU8[addrPtr + 3];
-        // addr at +4, big-endian uint32 → dotted decimal
-        const addr = `${HEAPU8[addrPtr+4]}.${HEAPU8[addrPtr+5]}.${HEAPU8[addrPtr+6]}.${HEAPU8[addrPtr+7]}`;
+    function sendToPeer(peerId, ab) {
+        const ch = channels.get(peerId);
+        if (ch && ch.readyState === 'open') {
+            ch.send(ab);
+        } else {
+            const q = sendQueue.get(peerId) || [];
+            q.push(ab);
+            sendQueue.set(peerId, q);
+            if (!peers.has(`${myHostId}:${peerId}`)) {
+                connectToPeer(peerId).catch(e => console.error('[P2P] auto-connect failed:', e));
+            }
+        }
+    }
+
+    // ── sockaddr helpers ──────────────────────────────────────────────────────
+    function readSockaddr(HEAPU8, ptr) {
+        const port = (HEAPU8[ptr+2] << 8) | HEAPU8[ptr+3];
+        const addr = `${HEAPU8[ptr+4]}.${HEAPU8[ptr+5]}.${HEAPU8[ptr+6]}.${HEAPU8[ptr+7]}`;
         return { addr, port };
     }
-
-    function writeSockaddr(HEAPU8, addrPtr, addr, port) {
-        const parts = addr.split('.').map(Number);
-        HEAPU8[addrPtr]   = 2;  HEAPU8[addrPtr+1] = 0;  // AF_INET
-        HEAPU8[addrPtr+2] = (port >> 8) & 0xff;
-        HEAPU8[addrPtr+3] = port & 0xff;
-        HEAPU8[addrPtr+4] = parts[0]; HEAPU8[addrPtr+5] = parts[1];
-        HEAPU8[addrPtr+6] = parts[2]; HEAPU8[addrPtr+7] = parts[3];
-        for (let i = 8; i < 16; i++) HEAPU8[addrPtr+i] = 0;
+    function writeSockaddr(HEAPU8, ptr, addr, port) {
+        const p = addr.split('.').map(Number);
+        HEAPU8[ptr]=2; HEAPU8[ptr+1]=0;
+        HEAPU8[ptr+2]=(port>>8)&0xff; HEAPU8[ptr+3]=port&0xff;
+        HEAPU8[ptr+4]=p[0]; HEAPU8[ptr+5]=p[1]; HEAPU8[ptr+6]=p[2]; HEAPU8[ptr+7]=p[3];
+        for(let i=8;i<16;i++) HEAPU8[ptr+i]=0;
+    }
+    function writeString(HEAPU8, ptr, str, maxLen) {
+        const enc = new TextEncoder().encode(str);
+        const len = Math.min(enc.length, maxLen - 1);
+        HEAPU8.set(enc.subarray(0, len), ptr);
+        HEAPU8[ptr + len] = 0;
+    }
+    function writeInt32(HEAPU8, ptr, val) {
+        HEAPU8[ptr]   =  val & 0xff;
+        HEAPU8[ptr+1] = (val>>8)  & 0xff;
+        HEAPU8[ptr+2] = (val>>16) & 0xff;
+        HEAPU8[ptr+3] = (val>>24) & 0xff;
+    }
+    function readInt32(HEAPU8, ptr) {
+        return HEAPU8[ptr] | (HEAPU8[ptr+1]<<8) | (HEAPU8[ptr+2]<<16) | (HEAPU8[ptr+3]<<24);
     }
 
-    // ── Module.net implementation ──────────────────────────────────────────────
+    // ── POSIX socket API (Module.net) ─────────────────────────────────────────
     function buildModuleNet() {
-        const netObj = {
+        return {
             getHostId: () => myHostId,
 
-            recvfrom(fd, bufPtr, bufLen, flags, addrPtr, addrLenPtr) {
-                const pkt = recvQueue.shift();
-                if (!pkt) {
-                    if (!window._recvfromLogged) { window._recvfromLogged=true; console.log('[P2P] recvfrom called (EAGAIN)'); }
-                    return -11;
-                }
-                console.log('[P2P] recvfrom delivering pkt from', pkt.fromAddr);
+            // socket(domain, type, protocol) → fd
+            socket(domain, type, protocol) {
+                const fd = nextFd++;
+                sockets.set(fd, { recvQueue: [], boundPort: 0 });
+                console.log(`[P2P] socket() → fd=${fd}`);
+                return fd;
+            },
 
+            // bind(fd, addrPtr, addrLen) → 0
+            bind(fd, addrPtr, addrLen) {
+                const mod = window._xashMod;
+                const sock = sockets.get(fd);
+                if (!sock || !mod) return -1;
+                const { port } = readSockaddr(mod.HEAPU8, addrPtr);
+                sock.boundPort = port;
+                console.log(`[P2P] bind(fd=${fd}) port=${port}`);
+                return 0;
+            },
+
+            // gethostname(namePtr, len) → 0
+            gethostname(namePtr, len) {
                 const mod = window._xashMod;
                 if (!mod) return -1;
+                // Return virtual IP based on our hostId
+                const ip = `101.101.${myHostId & 255}.${(myHostId >> 8) & 255}`;
+                writeString(mod.HEAPU8, namePtr, ip, len);
+                console.log(`[P2P] gethostname() → ${ip}`);
+                return 0;
+            },
 
-                // Write source address
+            // getaddrinfo(nodePtr, servicePtr, hintsPtr, resPtr) → 0
+            getaddrinfo(nodePtr, servicePtr, hintsPtr, resPtr) {
+                const mod = window._xashMod;
+                if (!mod) return -1;
+                // Read the hostname/IP being resolved
+                let hostname = '';
+                if (nodePtr) {
+                    let i = nodePtr;
+                    while (mod.HEAPU8[i]) hostname += String.fromCharCode(mod.HEAPU8[i++]);
+                }
+                console.log(`[P2P] getaddrinfo(${hostname})`);
+
+                // Allocate a struct addrinfo + sockaddr_in in WASM heap
+                // struct addrinfo: ai_flags(4), ai_family(4), ai_socktype(4), ai_protocol(4),
+                //                  ai_addrlen(4), ai_addr*(4), ai_canonname*(4), ai_next*(4) = 32 bytes
+                // sockaddr_in: 16 bytes
+                const infoSize = 32, saddrSize = 16;
+                const infoPtr = mod._malloc(infoSize + saddrSize);
+                const saddrPtr = infoPtr + infoSize;
+
+                // Resolve: if it looks like a 101.101.x.x IP, use it; else use our own IP
+                let resolvedIp = `101.101.${myHostId & 255}.${(myHostId >> 8) & 255}`;
+                if (hostname.match(/^\d+\.\d+\.\d+\.\d+$/)) resolvedIp = hostname;
+
+                // Zero out
+                mod.HEAPU8.fill(0, infoPtr, infoPtr + infoSize + saddrSize);
+
+                // ai_family = AF_INET = 2
+                writeInt32(mod.HEAPU8, infoPtr + 4, 2);
+                // ai_socktype = SOCK_DGRAM = 2
+                writeInt32(mod.HEAPU8, infoPtr + 8, 2);
+                // ai_addrlen = 16
+                writeInt32(mod.HEAPU8, infoPtr + 16, 16);
+                // ai_addr pointer
+                writeInt32(mod.HEAPU8, infoPtr + 20, saddrPtr);
+                // ai_next = null
+                writeInt32(mod.HEAPU8, infoPtr + 28, 0);
+
+                // Fill sockaddr_in
+                writeSockaddr(mod.HEAPU8, saddrPtr, resolvedIp, 27015);
+
+                // Write the result pointer
+                writeInt32(mod.HEAPU8, resPtr, infoPtr);
+                console.log(`[P2P] getaddrinfo(${hostname}) → ${resolvedIp}`);
+                return 0;
+            },
+
+            // freeaddrinfo(ptr) — free the malloc'd struct
+            freeaddrinfo(ptr) {
+                const mod = window._xashMod;
+                if (mod && ptr) mod._free(ptr);
+            },
+
+            // close(fd) → 0
+            close(fd) {
+                sockets.delete(fd);
+                return 0;
+            },
+
+            // setsockopt — ignore, return 0
+            setsockopt(fd, level, optname, optval, optlen) { return 0; },
+
+            // fcntl — ignore, return 0
+            fcntl(fd, cmd, arg) { return 0; },
+
+            // ioctl — ignore, return 0
+            ioctl(fd, req, arg) { return 0; },
+
+            // select — always say socket is readable (engine polls this)
+            select(nfds, readfds, writefds, exceptfds, timeout) { return 1; },
+
+            // recvfrom(fd, bufPtr, bufLen, flags, addrPtr, addrLenPtr) → len or -1
+            recvfrom(fd, bufPtr, bufLen, flags, addrPtr, addrLenPtr) {
+                const mod = window._xashMod;
+                const sock = sockets.get(fd);
+                if (!mod || !sock) return -1;
+                const pkt = sock.recvQueue.shift();
+                if (!pkt) return -11; // EAGAIN
+
+                if (!window._recvLogged) { window._recvLogged = true; console.log(`[P2P] recvfrom fd=${fd} from ${pkt.fromAddr}`); }
+
                 if (addrPtr) {
                     writeSockaddr(mod.HEAPU8, addrPtr, pkt.fromAddr, pkt.fromPort);
-                    if (addrLenPtr) {
-                        mod.HEAPU8[addrLenPtr]   = 16;
-                        mod.HEAPU8[addrLenPtr+1] = 0;
-                        mod.HEAPU8[addrLenPtr+2] = 0;
-                        mod.HEAPU8[addrLenPtr+3] = 0;
-                    }
+                    if (addrLenPtr) writeInt32(mod.HEAPU8, addrLenPtr, 16);
                 }
-                // Copy packet data into engine buffer
                 const len = Math.min(pkt.data.length, bufLen);
                 mod.HEAPU8.set(pkt.data.subarray(0, len), bufPtr);
                 return len;
             },
 
+            // sendto(fd, bufPtr, bufLen, flags, addrPtr, addrLen) → bufLen
             sendto(fd, bufPtr, bufLen, flags, addrPtr, addrLen) {
                 const mod = window._xashMod;
-                if (!mod || !addrPtr) return bufLen;
+                if (!mod) return bufLen;
 
                 const { addr, port } = readSockaddr(mod.HEAPU8, addrPtr);
-                if (!window._sendtoLogged) { window._sendtoLogged=true; console.log('[P2P] sendto called! addr=',addr,'port=',port,'len=',bufLen); }
                 if (addr === '255.255.255.255' || addr === '0.0.0.0') return bufLen;
+
+                if (!window._sendLogged) { window._sendLogged = true; console.log(`[P2P] sendto fd=${fd} → ${addr}:${port} len=${bufLen}`); }
 
                 const [,, b3, b4] = addr.split('.').map(Number);
                 const peerId = b3 | (b4 << 8);
-                const data = mod.HEAPU8.slice(bufPtr, bufPtr + bufLen).buffer.slice(
-                    mod.HEAPU8.byteOffset + bufPtr,
-                    mod.HEAPU8.byteOffset + bufPtr + bufLen
-                );
-
-                const ch = channels.get(peerId);
-                if (ch && ch.readyState === 'open') {
-                    ch.send(data);
-                } else {
-                    const q = sendQueue.get(peerId) || [];
-                    q.push(data);
-                    sendQueue.set(peerId, q);
-                    if (!peers.has(`${myHostId}:${peerId}`)) {
-                        console.log(`[P2P] sendto: auto-connect to peer ${peerId}`);
-                        makePeer(peerId, false); // host waits for joiner to offer
-                    }
-                }
+                const slice = mod.HEAPU8.slice(bufPtr, bufPtr + bufLen);
+                sendToPeer(peerId, slice.buffer.slice(slice.byteOffset, slice.byteOffset + slice.byteLength));
                 return bufLen;
-            }
-        }; // end netObj
-
-        // Wrap in Proxy to catch any unexpected property accesses by the engine
-        return new Proxy(netObj, {
-            get(target, prop) {
-                if (!(prop in target)) {
-                    console.warn('[P2P] Module.net: engine accessed unknown prop:', prop);
-                }
-                const val = target[prop];
-                if (typeof val === 'function') {
-                    return function(...args) {
-                        if (!window._netCallLog) window._netCallLog = {};
-                        if (!window._netCallLog[prop]) {
-                            window._netCallLog[prop] = true;
-                            console.log(`[P2P] Module.net.${prop} CALLED with ${args.length} args`);
-                        }
-                        return val.apply(target, args);
-                    };
-                }
-                return val;
             },
-            set(target, prop, value) {
-                console.log('[P2P] Module.net SET:', prop, '=', value);
-                target[prop] = value;
-                return true;
-            }
-        });
+        };
     }
 
         // ─── Game boot ───────────────────────────────────────────────────────────
@@ -693,15 +771,7 @@
                 statusEl.style.display = 'none';
 
                 window._xashMod = this;
-                // Log what Module.net actually is after engine init
-                console.log('[P2P] Module.net type:', typeof this.net);
-                if (this.net) {
-                    console.log('[P2P] Module.net keys:', Object.keys(this.net).join(','));
-                    console.log('[P2P] Module.net.sendto type:', typeof this.net.sendto);
-                    console.log('[P2P] Module.net.recvfrom type:', typeof this.net.recvfrom);
-                    // Check if engine replaced our net with its own
-                    console.log('[P2P] net is ours?', this.net.getHostId?.() === myHostId);
-                }
+                console.log('[P2P] Module.net:', typeof this.net, Object.keys(this.net || {}).join(','));
 
                 if (joinTargetId === null) {
                     // HOST: broadcast ready after map loads (~6s)
