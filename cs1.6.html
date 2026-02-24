@@ -468,13 +468,16 @@
                 sendQueue.delete(peerId);
             });
             ch.addEventListener('message', ({ data }) => {
-                // Deliver to all bound sockets (engine typically has one UDP socket)
                 const bytes = new Uint8Array(data instanceof ArrayBuffer ? data : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
                 const fromAddr = `101.101.${peerId & 255}.${(peerId >> 8) & 255}`;
-                sockets.forEach(sock => {
-                    sock.recvQueue.push({ fromAddr, fromPort: 27015, data: bytes });
-                });
-                if (sockets.size === 0) console.warn('[P2P] packet arrived but no sockets to deliver to!');
+                const pkt = { fromAddr, fromPort: 27015, data: bytes };
+                if (sockets.size > 0) {
+                    sockets.forEach(sock => sock.recvQueue.push(pkt));
+                } else {
+                    // Buffer until a socket is created
+                    if (!window._p2pPendingPkts) window._p2pPendingPkts = [];
+                    window._p2pPendingPkts.push(pkt);
+                }
             });
             ch.addEventListener('close', () => channels.delete(peerId));
         }
@@ -552,7 +555,14 @@
             // socket(domain, type, protocol) → fd
             socket(domain, type, protocol) {
                 const fd = nextFd++;
-                sockets.set(fd, { recvQueue: [], boundPort: 0 });
+                const sock = { recvQueue: [], boundPort: 0 };
+                // Flush any packets that arrived before socket was created
+                if (window._p2pPendingPkts?.length) {
+                    console.log(`[P2P] flushing ${window._p2pPendingPkts.length} pre-socket packets`);
+                    sock.recvQueue.push(...window._p2pPendingPkts);
+                    window._p2pPendingPkts = [];
+                }
+                sockets.set(fd, sock);
                 console.log(`[P2P] socket() → fd=${fd}`);
                 return fd;
             },
@@ -761,6 +771,7 @@
             ],
             // Module.net is the pluggable network layer in xash3d-fwgs CDN build
             net: buildModuleNet(),
+            preRun: [function() { window._xashMod = this; console.log('[P2P] _xashMod set in preRun'); }],
             onRuntimeInitialized: function () {
                 Object.entries(files).forEach(([k, v]) => {
                     const dir = k.split('/').slice(0, -1).join('/');
