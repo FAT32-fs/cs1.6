@@ -847,6 +847,16 @@
             }
         }
 
+        // Assign hostId before building moduleConfig (needed for getHostId)
+        if (!myHostId) {
+            if (joinTargetId !== null || lanEnabled) {
+                await connectSignaling();
+            } else {
+                myHostId = Math.floor(Math.random() * 60000) + 1;
+                console.log('[P2P] Solo mode, hostId =', myHostId);
+            }
+        }
+
         const moduleConfig = {
             arguments: gameArgs,
             canvas, ctx,
@@ -884,7 +894,7 @@
                         channels.forEach(ch => {
                             try { ch.send(new TextEncoder().encode(JSON.stringify({ ready: true }))); } catch(e) {}
                         });
-                        sigSocket.send(JSON.stringify({ broadcast: 'ready', from: myHostId }));
+                        if (sigSocket) sigSocket.send(JSON.stringify({ broadcast: 'ready', from: myHostId }));
                         console.log('[P2P] broadcast ready sent');
 
                         if (botsEnabled) {
@@ -913,11 +923,6 @@
                 }
             },
         };
-
-        // Connect signaling if not already connected (lanEnabled connected earlier)
-        if (joinTargetId !== null || (lanEnabled && !myHostId)) {
-            if (!myHostId) await connectSignaling();
-        }
 
         // If joining: open WebRTC channel then wait for host ready signal
         if (joinTargetId !== null) {
