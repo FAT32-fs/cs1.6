@@ -398,8 +398,16 @@
 
     // Bot controls
     function execCmd(cmd) {
-        try { netRef.mod?.executeString?.(cmd); }
-        catch(e) { console.error('[P2P] execCmd error:', cmd, e.message); }
+        try {
+            const inst = window._xashInstance;
+            const mod  = netRef.mod;
+            if (inst?.Cmd_ExecuteString) { inst.Cmd_ExecuteString(cmd); return; }
+            if (mod?.Cmd_ExecuteString)  { mod.Cmd_ExecuteString(cmd);  return; }
+            if (mod?.executeString)      { mod.executeString(cmd);      return; }
+            // fallback: ccall
+            if (mod?.ccall) { mod.ccall('Cmd_ExecuteString', null, ['string'], [cmd]); return; }
+            console.warn('[P2P] execCmd: no execute function found for:', cmd);
+        } catch(e) { console.error('[P2P] execCmd error:', cmd, e.message); }
     }
     document.getElementById('ig-add-ct').addEventListener('click', () => {
         execCmd('bot_join_team ct'); execCmd('addbot');
@@ -891,13 +899,16 @@
                 this.FS.chdir('/rodir');
                 statusEl.style.display = 'none';
 
-                // Set netRef.mod so net hook functions can access HEAPU8
                 netRef.mod = this;
-                window._xashMod = this; // also keep global ref for bot commands
+                window._xashMod = this;
                 console.log('[P2P] Module ready, HEAPU8:', !!this.HEAPU8);
+                // Log available execute functions
+                const execFns = Object.keys(this).filter(k => k.toLowerCase().includes('exec') || k.toLowerCase().includes('cmd') || k.toLowerCase().includes('command'));
+                console.log('[P2P] Execute functions:', execFns.join(', ') || 'none found');
                 document.getElementById('vol-widget').classList.add('visible');
                 gameRunning = true;
-                try { this.executeString?.(`volume ${volumeVal.toFixed(2)}`); } catch(e) {}
+                // execCmd not available here yet so defer
+                setTimeout(() => execCmd(`volume ${volumeVal.toFixed(2)}`), 100);
 
                 if (joinTargetId === null) {
                     // HOST: broadcast ready after map loads (~6s)
@@ -916,7 +927,7 @@
                              'bot_join_team t',
                              ...Array(botsPerTeam).fill('addbot'),
                              'bot_join_team any'
-                            ].forEach(cmd => { try { mod.executeString?.(cmd); } catch(e) {} });
+                            ].forEach(cmd => execCmd(cmd));
                         }
                     }, 6000);
                 }
@@ -956,7 +967,7 @@
         }
 
         statusEl.textContent = 'Starting game...';
-        Xash3D(moduleConfig);
+        window._xashInstance = Xash3D(moduleConfig);
     }
 </script>
 </body>
