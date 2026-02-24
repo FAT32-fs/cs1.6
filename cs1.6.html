@@ -358,7 +358,7 @@
         document.getElementById('ig-vol').value = val;
         document.getElementById('ig-vol-pct').textContent = val + '%';
         volumeVal = val / 100;
-        if (window._xashMod?.executeString) window._xashMod.executeString(`volume ${volumeVal.toFixed(2)}`);
+        netRef.mod?.executeString?.(`volume ${volumeVal.toFixed(2)}`);
     }
     document.getElementById('vol-range').addEventListener('input', function() { syncVolume(parseInt(this.value)); });
     document.getElementById('ig-vol').addEventListener('input', function() { syncVolume(parseInt(this.value)); });
@@ -392,19 +392,23 @@
             document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
             this.classList.add('active');
             currentDiff = parseInt(this.dataset.diff);
-            if (window._xashMod?.executeString) window._xashMod.executeString(`bot_difficulty ${currentDiff}`);
+            execCmd(`bot_difficulty ${currentDiff}`);
         });
     });
 
     // Bot controls
+    function execCmd(cmd) {
+        try { netRef.mod?.executeString?.(cmd); }
+        catch(e) { console.error('[P2P] execCmd error:', cmd, e.message); }
+    }
     document.getElementById('ig-add-ct').addEventListener('click', () => {
-        if (window._xashMod?.executeString) { window._xashMod.executeString('bot_join_team ct'); window._xashMod.executeString('addbot'); }
+        execCmd('bot_join_team ct'); execCmd('addbot');
     });
     document.getElementById('ig-add-t').addEventListener('click', () => {
-        if (window._xashMod?.executeString) { window._xashMod.executeString('bot_join_team t'); window._xashMod.executeString('addbot'); }
+        execCmd('bot_join_team t'); execCmd('addbot');
     });
     document.getElementById('ig-kick-bot').addEventListener('click', () => {
-        if (window._xashMod?.executeString) window._xashMod.executeString('bot_kick');
+        execCmd('bot_kick');
     });
 
     // ESC key toggles overlay (only when game is running)
@@ -893,7 +897,7 @@
                 console.log('[P2P] Module ready, HEAPU8:', !!this.HEAPU8);
                 document.getElementById('vol-widget').classList.add('visible');
                 gameRunning = true;
-                if (this.executeString) this.executeString(`volume ${volumeVal.toFixed(2)}`);
+                try { this.executeString?.(`volume ${volumeVal.toFixed(2)}`); } catch(e) {}
 
                 if (joinTargetId === null) {
                     // HOST: broadcast ready after map loads (~6s)
@@ -912,7 +916,7 @@
                              'bot_join_team t',
                              ...Array(botsPerTeam).fill('addbot'),
                              'bot_join_team any'
-                            ].forEach(cmd => mod.executeString?.(cmd));
+                            ].forEach(cmd => { try { mod.executeString?.(cmd); } catch(e) {} });
                         }
                     }, 6000);
                 }
