@@ -522,7 +522,7 @@
 
     // ── Module.net implementation ──────────────────────────────────────────────
     function buildModuleNet() {
-        return {
+        const netObj = {
             getHostId: () => myHostId,
 
             recvfrom(fd, bufPtr, bufLen, flags, addrPtr, addrLenPtr) {
@@ -581,7 +581,33 @@
                 }
                 return bufLen;
             }
-        };
+        }; // end netObj
+
+        // Wrap in Proxy to catch any unexpected property accesses by the engine
+        return new Proxy(netObj, {
+            get(target, prop) {
+                if (!(prop in target)) {
+                    console.warn('[P2P] Module.net: engine accessed unknown prop:', prop);
+                }
+                const val = target[prop];
+                if (typeof val === 'function') {
+                    return function(...args) {
+                        if (!window._netCallLog) window._netCallLog = {};
+                        if (!window._netCallLog[prop]) {
+                            window._netCallLog[prop] = true;
+                            console.log(`[P2P] Module.net.${prop} CALLED with ${args.length} args`);
+                        }
+                        return val.apply(target, args);
+                    };
+                }
+                return val;
+            },
+            set(target, prop, value) {
+                console.log('[P2P] Module.net SET:', prop, '=', value);
+                target[prop] = value;
+                return true;
+            }
+        });
     }
 
         // ─── Game boot ───────────────────────────────────────────────────────────
